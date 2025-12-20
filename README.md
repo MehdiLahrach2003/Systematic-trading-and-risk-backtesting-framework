@@ -7,7 +7,7 @@ L’objectif est de construire un **framework quant cohérent et reproductible**
 
 ---
 
-## 🎯 Objectifs du projet
+## Objectifs du projet
 
 - Implémenter un **moteur de backtesting** modulaire et extensible
 - Étudier et comparer différentes **stratégies quantitatives**
@@ -20,56 +20,61 @@ Ce projet sert à la fois de **support d’apprentissage avancé** et de **portf
 
 ---
 
-## 🧱 Architecture du projet
+## Architecture du projet
 
 quant-journey/
-│
-├── backtesting/ # Moteur de backtest, stratégies et gestion du risque
-│ ├── engine.py
-│ ├── rules.py
-│ ├── portfolio.py
-│ ├── optimizer.py
-│ ├── regime.py
-│ ├── risk.py
-│ ├── risk_measures.py
-│ ├── risk_contrib.py
-│ └── var_*.py
-│
-├── pricing/ # Pricing de dérivés et simulations Monte Carlo
-│ ├── black_scholes.py
-│ ├── implied_vol.py
-│ ├── monte_carlo_gbm.py
-│ ├── asian_option_mc.py
-│ ├── delta_hedge_mc.py
-│ └── delta_hedge_backtest.py
-│
-├── scripts/ # Scripts d’exécution reproductibles
-│ ├── run_backtest.py
-│ ├── run_var_mc.py
-│ ├── run_multiaset_frontier.py
-│ ├── run_vol_target.py
-│ └── ...
-│
-├── utils/ # Chargement des données, walkforward, grid search
-│ ├── data_loader.py
-│ ├── walkforward.py
-│ ├── param_search.py
-│ └── risk_mc.py
-│
-├── data/ # Données, résultats, figures et métriques
-│ ├── *.csv
-│ └── *.png
-│
-├── notebooks/ # Analyses exploratoires (optionnel)
-│
-├── requirements.txt
-├── README.md
-└── LICENSE
+├─ pyproject.toml
+├─ README.md
+├─ LICENSE
+├─ requirements.txt            # optionnel si pyproject gère tout
+├─ src/
+│  └─ quant_journey/
+│     ├─ __init__.py
+│     ├─ backtesting/
+│     │  ├─ __init__.py
+│     │  ├─ engine.py
+│     │  ├─ rules.py
+│     │  ├─ costs.py
+│     │  ├─ execution.py
+│     │  ├─ strategies/
+│     │  │  ├─ __init__.py
+│     │  │  ├─ sma_crossover.py
+│     │  │  ├─ trend_breakout.py
+│     │  │  └─ regime.py
+│     │  └─ portfolio/
+│     │     ├─ __init__.py
+│     │     ├─ optimizer.py
+│     │     ├─ allocations.py   # minvar, frontier, risk parity, vol target
+│     │     └─ risk_contrib.py
+│     ├─ risk/
+│     │  ├─ __init__.py
+│     │  ├─ measures.py         # VaR/ES etc.
+│     │  ├─ var_backtest.py
+│     │  └─ monte_carlo.py
+│     ├─ pricing/
+│     │  ├─ __init__.py
+│     │  ├─ black_scholes.py
+│     │  ├─ implied_vol.py
+│     │  ├─ monte_carlo_gbm.py
+│     │  └─ hedging/
+│     │     ├─ __init__.py
+│     │     ├─ delta_hedge_mc.py
+│     │     └─ delta_hedge_backtest.py
+│     └─ data/
+│        ├─ __init__.py
+│        ├─ loader.py
+│        └─ sources.py
+├─ scripts/                    # stays: entrypoints / runners
+├─ tests/
+├─ data/
+│  ├─ raw/                     # inputs (AAPL.csv, etc.)
+│  ├─ processed/               # cleaned/merged
+│  └─ outputs/
+│     ├─ figures/
+│     └─ tables/
+└─ notebooks/
 
-
----
-
-## 📈 Stratégies implémentées
+## Stratégies implémentées
 
 - **Moving Average Crossover (SMA)**
 - **Trend Breakout**
@@ -84,7 +89,7 @@ quant-journey/
 
 ---
 
-## ⚠️ Gestion du risque
+## Gestion du risque
 
 - **Value-at-Risk (VaR)** :
   - Historique
@@ -97,7 +102,7 @@ quant-journey/
 
 ---
 
-## 🧮 Pricing & dérivés
+## Pricing & dérivés
 
 - Modèle **Black–Scholes**
 - **Volatilité implicite** et smile
@@ -108,7 +113,7 @@ quant-journey/
 
 ---
 
-## 📊 Résultats et visualisations
+## Résultats et visualisations
 
 Le projet génère automatiquement :
 - courbes de capital (equity curves)
@@ -122,7 +127,7 @@ Les résultats sont exportés en **CSV** et **PNG** pour analyse et reporting.
 
 ---
 
-## 🔁 Reproductibilité
+## Reproductibilité
 
 - Scripts dédiés pour chaque expérience
 - Paramètres explicites
@@ -131,7 +136,7 @@ Les résultats sont exportés en **CSV** et **PNG** pour analyse et reporting.
 
 ---
 
-## 🛠️ Environnement technique
+## Environnement technique
 
 - **Python 3.13**
 - NumPy, Pandas
@@ -142,7 +147,7 @@ Les résultats sont exportés en **CSV** et **PNG** pour analyse et reporting.
 
 ---
 
-## 🚧 Limitations et perspectives
+## Limitations et perspectives
 
 - Modèles volontairement simples (objectif pédagogique et analytique)
 - Pas de microstructure de marché
@@ -155,13 +160,13 @@ Les résultats sont exportés en **CSV** et **PNG** pour analyse et reporting.
 
 ---
 
-## 👤 Auteur
+## Auteur
 
 Projet personnel développé par un étudiant en **M1 Mathématiques Appliquées – Statistiques**,  
 intéressé par la **finance quantitative**, le **quant trading** et la **recherche quantitative**.
 
 ---
 
-## 📜 Licence
+## Licence
 
 Projet open-source à but pédagogique.
