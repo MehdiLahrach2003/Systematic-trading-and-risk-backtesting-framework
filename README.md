@@ -22,57 +22,75 @@ Ce projet sert à la fois de **support d’apprentissage avancé** et de **portf
 
 ## Architecture du projet
 
-quant-journey/
-├─ pyproject.toml
-├─ README.md
-├─ LICENSE
-├─ requirements.txt            # optionnel si pyproject gère tout
-├─ src/
-│  └─ quant_journey/
-│     ├─ __init__.py
-│     ├─ backtesting/
-│     │  ├─ __init__.py
-│     │  ├─ engine.py
-│     │  ├─ rules.py
-│     │  ├─ costs.py
-│     │  ├─ execution.py
-│     │  ├─ strategies/
-│     │  │  ├─ __init__.py
-│     │  │  ├─ sma_crossover.py
-│     │  │  ├─ trend_breakout.py
-│     │  │  └─ regime.py
-│     │  └─ portfolio/
-│     │     ├─ __init__.py
-│     │     ├─ optimizer.py
-│     │     ├─ allocations.py   # minvar, frontier, risk parity, vol target
-│     │     └─ risk_contrib.py
-│     ├─ risk/
-│     │  ├─ __init__.py
-│     │  ├─ measures.py         # VaR/ES etc.
-│     │  ├─ var_backtest.py
-│     │  └─ monte_carlo.py
-│     ├─ pricing/
-│     │  ├─ __init__.py
-│     │  ├─ black_scholes.py
-│     │  ├─ implied_vol.py
-│     │  ├─ monte_carlo_gbm.py
-│     │  └─ hedging/
-│     │     ├─ __init__.py
-│     │     ├─ delta_hedge_mc.py
-│     │     └─ delta_hedge_backtest.py
-│     └─ data/
-│        ├─ __init__.py
-│        ├─ loader.py
-│        └─ sources.py
-├─ scripts/                    # stays: entrypoints / runners
-├─ tests/
-├─ data/
-│  ├─ raw/                     # inputs (AAPL.csv, etc.)
-│  ├─ processed/               # cleaned/merged
-│  └─ outputs/
-│     ├─ figures/
-│     └─ tables/
-└─ notebooks/
+backtesting/ — Moteur de backtest et stratégies
+
+- engine.py : boucle principale de backtesting, gestion du temps et des positions
+
+- rules.py : règles de trading et signaux
+
+- portfolio.py : construction et suivi de portefeuilles
+
+- optimizer.py : optimisation de portefeuille (min variance, frontier, risk parity)
+
+- regime.py : filtres de régime de marché
+
+- Gestion du risque
+
+    - risk.py : logique de risque globale
+
+    - risk_measures.py : mesures de risque (VaR, ES, drawdown, etc.)
+
+    - risk_contrib.py : contributions au risque
+
+    - var_*.py : VaR historique, Cornish–Fisher et Monte Carlo
+
+pricing/ — Pricing de dérivés et simulations Monte Carlo
+
+- black_scholes.py : modèle Black–Scholes
+
+- implied_vol.py : calcul de volatilité implicite et smile
+
+- monte_carlo_gbm.py : simulation GBM
+
+- asian_option_mc.py : pricing d’options asiatiques
+
+- Hedging
+
+    - delta_hedge_mc.py : delta hedging par Monte Carlo
+
+    - delta_hedge_backtest.py : backtest de stratégies de couverture
+
+scripts/ — Scripts d’exécution reproductibles
+
+- run_backtest.py : exécution de backtests de stratégies
+
+- run_var_mc.py : simulations Monte Carlo pour le risque
+
+- run_multiasset_frontier.py : frontières efficientes multi-actifs
+
+- run_vol_target.py : stratégies de ciblage de volatilité
+
+- autres scripts pour analyses spécifiques
+
+utils/ — Outils transverses
+
+- data_loader.py : chargement et prétraitement des données
+
+- walkforward.py : validation walkforward
+
+- param_search.py : grid search et tuning de paramètres
+
+- risk_mc.py : outils Monte Carlo génériques
+
+data/ — Données et résultats
+
+- données de marché (CSV)
+
+- résultats numériques (CSV)
+
+- figures et visualisations (PNG)
+
+notebooks/ — Analyses exploratoires (optionnel)
 
 ## Stratégies implémentées
 
