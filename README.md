@@ -1,190 +1,196 @@
 # Quant Journey
 
-**Quant Journey** est un projet personnel de recherche et de développement en **finance quantitative**, **gestion du risque** et **backtesting de stratégies**, développé dans le cadre de mon **M1 Mathématiques Appliquées – majeure Statistiques (Université Paris-Dauphine)**.
+**Quant Journey** is a personal research and development project in **quantitative finance**, **risk management**, and **strategy backtesting**, developed as part of my **M1 in Applied Mathematics – Statistics major (Université Paris-Dauphine)**.
 
-L’objectif est de construire un **framework quant cohérent et reproductible**, couvrant l’ensemble de la chaîne :
-> données → stratégies → backtesting → gestion du risque → allocation de portefeuille → pricing de dérivés → analyse des résultats.
+The objective is to build a **coherent and reproducible quant framework**, covering the full pipeline:
 
----
-
-## Objectifs du projet
-
-- Implémenter un **moteur de backtesting** modulaire et extensible
-- Étudier et comparer différentes **stratégies quantitatives**
-- Mettre en œuvre des méthodes de **gestion du risque** (VaR, ES, contributions au risque)
-- Explorer l’**allocation de portefeuille multi-actifs**
-- Implémenter des modèles de **pricing et hedging de produits dérivés**
-- Produire des **résultats analytiques et graphiques reproductibles**
-
-Ce projet sert à la fois de **support d’apprentissage avancé** et de **portfolio technique** orienté quant / trading / research.
+> data → strategies → backtesting → risk management → portfolio allocation → derivatives pricing → results analysis.
 
 ---
 
-## Architecture du projet
+## Project Objectives
 
-backtesting/ — Moteur de backtest et stratégies
+* Implement a **modular and extensible backtesting engine**
+* Study and compare different **quantitative trading strategies**
+* Implement **risk management methodologies** (VaR, ES, risk contributions)
+* Explore **multi-asset portfolio allocation**
+* Implement **derivatives pricing and hedging models**
+* Produce **reproducible analytical and graphical results**
 
-- engine.py : boucle principale de backtesting, gestion du temps et des positions
-
-- rules.py : règles de trading et signaux
-
-- portfolio.py : construction et suivi de portefeuilles
-
-- optimizer.py : optimisation de portefeuille (min variance, frontier, risk parity)
-
-- regime.py : filtres de régime de marché
-
-- Gestion du risque
-
-    - risk.py : logique de risque globale
-
-    - risk_measures.py : mesures de risque (VaR, ES, drawdown, etc.)
-
-    - risk_contrib.py : contributions au risque
-
-    - var_*.py : VaR historique, Cornish–Fisher et Monte Carlo
-
-pricing/ — Pricing de dérivés et simulations Monte Carlo
-
-- black_scholes.py : modèle Black–Scholes
-
-- implied_vol.py : calcul de volatilité implicite et smile
-
-- monte_carlo_gbm.py : simulation GBM
-
-- asian_option_mc.py : pricing d’options asiatiques
-
-- Hedging
-
-    - delta_hedge_mc.py : delta hedging par Monte Carlo
-
-    - delta_hedge_backtest.py : backtest de stratégies de couverture
-
-scripts/ — Scripts d’exécution reproductibles
-
-- run_backtest.py : exécution de backtests de stratégies
-
-- run_var_mc.py : simulations Monte Carlo pour le risque
-
-- run_multiasset_frontier.py : frontières efficientes multi-actifs
-
-- run_vol_target.py : stratégies de ciblage de volatilité
-
-- autres scripts pour analyses spécifiques
-
-utils/ — Outils transverses
-
-- data_loader.py : chargement et prétraitement des données
-
-- walkforward.py : validation walkforward
-
-- param_search.py : grid search et tuning de paramètres
-
-- risk_mc.py : outils Monte Carlo génériques
-
-data/ — Données et résultats
-
-- données de marché (CSV)
-
-- résultats numériques (CSV)
-
-- figures et visualisations (PNG)
-
-notebooks/ — Analyses exploratoires (optionnel)
-
-## Stratégies implémentées
-
-- **Moving Average Crossover (SMA)**
-- **Trend Breakout**
-- **Regime Filtering**
-- **Volatility Targeting**
-- **Risk Parity**
-- **Minimum Variance**
-- **Efficient Frontier**
-- **Multi-asset allocation**
-- **Walkforward optimization**
-- **Stops & transaction costs**
+This project serves both as an **advanced learning support** and a **technical portfolio** oriented toward quant / trading / research roles.
 
 ---
 
-## Gestion du risque
+## Project Architecture
 
-- **Value-at-Risk (VaR)** :
-  - Historique
-  - Cornish–Fisher
-  - Monte Carlo
-- **Expected Shortfall (ES)**
-- **Backtests de VaR**
-- **Contributions au risque**
-- **Simulations Monte Carlo des PnL**
+backtesting/ — Backtesting engine and strategies
 
----
+* engine.py : main backtesting loop, time handling and position management
 
-## Pricing & dérivés
+* rules.py : trading rules and signal generation
 
-- Modèle **Black–Scholes**
-- **Volatilité implicite** et smile
-- **Monte Carlo (GBM)**
-- **Options asiatiques**
-- **Delta hedging** (simulation et backtest)
-- Analyse des erreurs de couverture
+* portfolio.py : portfolio construction and tracking
 
----
+* optimizer.py : portfolio optimization (minimum variance, efficient frontier, risk parity)
 
-## Résultats et visualisations
+* regime.py : market regime filters
 
-Le projet génère automatiquement :
-- courbes de capital (equity curves)
-- frontières efficientes
-- heatmaps de paramètres
-- distributions de risque
-- backtests VaR
-- tear sheets synthétiques
+* Risk management
 
-Les résultats sont exportés en **CSV** et **PNG** pour analyse et reporting.
+  * risk.py : global risk logic
 
----
+  * risk_measures.py : risk measures (VaR, ES, drawdown, etc.)
 
-## Reproductibilité
+  * risk_contrib.py : risk contributions
 
-- Scripts dédiés pour chaque expérience
-- Paramètres explicites
-- Seeds fixes pour les simulations Monte Carlo
-- Séparation claire entre **logique métier** et **orchestration**
+  * var_*.py : historical, Cornish–Fisher and Monte Carlo VaR
 
----
+pricing/ — Derivatives pricing and Monte Carlo simulations
 
-## Environnement technique
+* black_scholes.py : Black–Scholes model
 
-- **Python 3.13**
-- NumPy, Pandas
-- SciPy
-- Matplotlib
-- Scikit-learn
-- Jupyter (exploration)
+* implied_vol.py : implied volatility computation and smile
 
----
+* monte_carlo_gbm.py : GBM simulation
 
-## Limitations et perspectives
+* asian_option_mc.py : Asian option pricing
 
-- Modèles volontairement simples (objectif pédagogique et analytique)
-- Pas de microstructure de marché
-- Pas de slippage dynamique
-- Extensions possibles :
-  - modèles stochastiques avancés
-  - contraintes de liquidité
-  - optimisation robuste
-  - couplage avec modèles statistiques avancés
+* Hedging
 
----
+  * delta_hedge_mc.py : Monte Carlo delta hedging
 
-## Auteur
+  * delta_hedge_backtest.py : hedging strategy backtesting
 
-Projet personnel développé par un étudiant en **M1 Mathématiques Appliquées – Statistiques**,  
-intéressé par la **finance quantitative**, le **quant trading** et la **recherche quantitative**.
+scripts/ — Reproducible execution scripts
+
+* run_backtest.py : strategy backtesting execution
+
+* run_var_mc.py : Monte Carlo risk simulations
+
+* run_multiasset_frontier.py : multi-asset efficient frontiers
+
+* run_vol_target.py : volatility targeting strategies
+
+* other scripts for specific analyses
+
+utils/ — Cross-cutting utilities
+
+* data_loader.py : data loading and preprocessing
+
+* walkforward.py : walkforward validation
+
+* param_search.py : grid search and parameter tuning
+
+* risk_mc.py : generic Monte Carlo utilities
+
+data/ — Data and results
+
+* market data (CSV)
+
+* numerical results (CSV)
+
+* figures and visualizations (PNG)
+
+notebooks/ — Exploratory analyses (optional)
 
 ---
 
-## Licence
+## Implemented Strategies
 
-Projet open-source à but pédagogique.
+* **Moving Average Crossover (SMA)**
+* **Trend Breakout**
+* **Regime Filtering**
+* **Volatility Targeting**
+* **Risk Parity**
+* **Minimum Variance**
+* **Efficient Frontier**
+* **Multi-asset allocation**
+* **Walkforward optimization**
+* **Stops & transaction costs**
+
+---
+
+## Risk Management
+
+* **Value-at-Risk (VaR)** :
+
+  * Historical
+  * Cornish–Fisher
+  * Monte Carlo
+* **Expected Shortfall (ES)**
+* **VaR backtests**
+* **Risk contributions**
+* **Monte Carlo PnL simulations**
+
+---
+
+## Pricing & Derivatives
+
+* **Black–Scholes** model
+* **Implied volatility** and smile
+* **Monte Carlo (GBM)**
+* **Asian options**
+* **Delta hedging** (simulation and backtesting)
+* Hedging error analysis
+
+---
+
+## Results and Visualizations
+
+The project automatically generates:
+
+* equity curves
+* efficient frontiers
+* parameter heatmaps
+* risk distributions
+* VaR backtests
+* synthetic tear sheets
+
+Results are exported in **CSV** and **PNG** formats for analysis and reporting.
+
+---
+
+## Reproducibility
+
+* Dedicated scripts for each experiment
+* Explicit parameters
+* Fixed random seeds for Monte Carlo simulations
+* Clear separation between **business logic** and **orchestration**
+
+---
+
+## Technical Environment
+
+* **Python 3.13**
+* NumPy, Pandas
+* SciPy
+* Matplotlib
+* Scikit-learn
+* Jupyter (exploration)
+
+---
+
+## Limitations and Perspectives
+
+* Intentionally simple models (pedagogical and analytical objective)
+* No market microstructure modeling
+* No dynamic slippage modeling
+* Possible extensions:
+
+  * advanced stochastic models
+  * liquidity constraints
+  * robust optimization
+  * integration with advanced statistical models
+
+---
+
+## Author
+
+Personal project developed by a student in **M1 Applied Mathematics – Statistics**,
+with strong interest in **quantitative finance**, **quant trading**, and **quantitative research**.
+
+---
+
+## License
+
+Open-source project for educational purposes.
