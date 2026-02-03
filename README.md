@@ -189,8 +189,3 @@ Results are exported in **CSV** and **PNG** formats for analysis and reporting.
 Personal project developed by a student in **M1 Applied Mathematics – Statistics**,
 with strong interest in **quantitative finance**, **quant trading**, and **quantitative research**.
 
----
-
-## License
-
-Open-source project for educational purposes.
