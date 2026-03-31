@@ -1,5 +1,14 @@
 # utils/data_loader.py
-# Loads prices from /data or generates synthetic data if missing.
+# -------------------------------------------------------------
+# Ce fichier sert à charger des données de prix depuis le dossier /data.
+#
+# Si les fichiers CSV n'existent pas, il génère des données synthétiques
+# pour que le projet puisse quand même fonctionner.
+#
+# Il gère :
+# - le cas d'un seul actif
+# - le cas de plusieurs actifs
+# -------------------------------------------------------------
 
 import os
 from typing import Sequence, Dict
@@ -9,10 +18,8 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------------
-# Internal helpers
+# Fonction interne : charger un CSV ou simuler une série de prix
 # ---------------------------------------------------------------------
-
-
 def _load_or_simulate_price(
     csv_path: str,
     start_date: str = "2020-01-01",
@@ -20,30 +27,54 @@ def _load_or_simulate_price(
     seed: int = 42,
 ) -> pd.DataFrame:
     """
-    Load a single price CSV and normalize it to a DataFrame with a 'price'
-    column indexed by dates. If the file does not exist, generate a
-    synthetic GBM-like path.
+    Charge un fichier CSV de prix et le transforme en DataFrame standard
+    avec une colonne 'price' indexée par les dates.
 
-    This is used by both `load_prices` and `load_multi_assets`.
+    Si le fichier n'existe pas, on génère une série synthétique de prix.
     """
+
+    # Si le fichier n'existe pas, on génère des prix artificiels
     if not os.path.exists(csv_path):
         print(f"⚠️  File not found ({os.path.basename(csv_path)}), generating synthetic prices...")
+
+        # Générateur aléatoire avec seed fixe pour reproductibilité
         rng = np.random.default_rng(seed)
-        S0, mu, sigma = 100.0, 0.10, 0.20
-        dt = 1.0 / 252.0
+
+        # Paramètres simples de simulation
+        S0 = 100.0   # prix initial
+        mu = 0.10    # dérive
+        sigma = 0.20 # volatilité
+        dt = 1.0 / 252.0  # pas journalier
+
+        # Bruit gaussien
         z = rng.normal(size=n_days)
+
+        # Rendements simulés de type GBM
         r = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z
+
+        # Construction de la trajectoire de prix
         s = S0 * np.exp(np.cumsum(r))
+
+        # Index de dates (jours ouvrés)
         idx = pd.bdate_range(start_date, periods=n_days)
+
+        # DataFrame final standardisé
         df = pd.DataFrame({"price": s}, index=idx)
         return df
 
+    # Si le fichier existe, on le lit
     df = pd.read_csv(csv_path)
 
-    # Be tolerant to various column names
+    # On essaie d'être tolérant sur les noms de colonnes
     cols = {c.lower(): c for c in df.columns}
+
+    # Colonne date :
+    # si une colonne "date" existe, on la prend
+    # sinon on prend la première colonne
     date_col = cols.get("date", list(df.columns)[0])
-    # common price columns: 'close', 'adj close', etc.
+
+    # Colonne prix :
+    # on cherche parmi les noms classiques
     price_col = (
         cols.get("close")
         or cols.get("adj close")
@@ -52,98 +83,94 @@ def _load_or_simulate_price(
         or list(df.columns)[-1]
     )
 
+    # Conversion de la date
     df[date_col] = pd.to_datetime(df[date_col])
+
+    # Mise en index temporel et tri chronologique
     df = df.set_index(date_col).sort_index()
+
+    # On renomme la colonne de prix en "price"
+    # pour que tout le projet ait toujours le même format
     df = df.rename(columns={price_col: "price"})[["price"]].astype(float)
+
     return df
 
 
 # ---------------------------------------------------------------------
-# Single-series loader (used by most scripts)
+# Chargement d'un seul actif
 # ---------------------------------------------------------------------
-
-
 def load_prices(filename: str = "prices.csv") -> pd.DataFrame:
     """
-    Load a price DataFrame with a 'price' column indexed by dates.
-    If /data/<filename> is missing, generate a synthetic GBM-like series.
+    Charge un fichier de prix unique avec une colonne 'price'.
 
-    Returns
-    -------
-    pd.DataFrame
-        Columns: ['price'], index: DatetimeIndex
+    Si /data/<filename> n'existe pas, une série synthétique est générée.
     """
+
+    # Chemin du projet
     base_path = os.path.dirname(os.path.dirname(__file__))
+
+    # Chemin complet vers le fichier CSV
     data_path = os.path.join(base_path, "data", filename)
 
-    # Keep the original behaviour (2020 start, 1200 days, seed=42)
+    # Chargement ou simulation
     df = _load_or_simulate_price(
         csv_path=data_path,
         start_date="2020-01-01",
         n_days=1200,
         seed=42,
     )
+
     return df
 
 
 # ---------------------------------------------------------------------
-# Multi-asset loader for portfolio / multi-asset scripts
+# Chargement de plusieurs actifs
 # ---------------------------------------------------------------------
-
-
 def load_multi_assets(symbols: Sequence[str]) -> pd.DataFrame:
     """
-    Load multiple assets from /data as a single price DataFrame.
+    Charge plusieurs actifs depuis le dossier /data et les aligne
+    dans un seul DataFrame.
 
-    For each symbol in `symbols`, this function expects a CSV file named
-    '<SYMBOL>.csv' in the /data folder, with at least:
-      - a date column (e.g. 'Date')
-      - a price/close column (e.g. 'Close', 'Adj Close', 'price')
+    Chaque actif doit idéalement avoir son propre fichier CSV :
+        <SYMBOL>.csv
 
-    If a file is missing, a synthetic GBM-like series is generated for
-    that symbol so that the rest of the code still runs.
-
-    Parameters
-    ----------
-    symbols : sequence of str
-        Asset tickers, e.g. ["MSFT", "BTCUSD", "SP500", "AAPL"].
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns: one column per symbol (MSFT, BTCUSD, ...),
-        index: DatetimeIndex (business days), forward-filled and
-        with any remaining NaNs dropped.
+    Si un fichier manque, des prix synthétiques sont générés.
     """
+
+    # Dossier racine puis dossier data
     base_path = os.path.dirname(os.path.dirname(__file__))
     data_dir = os.path.join(base_path, "data")
 
+    # Dictionnaire qui contiendra une série par symbole
     series_by_symbol: Dict[str, pd.Series] = {}
 
-    # Use different seeds per symbol for synthetic generation
+    # Seed de base pour que chaque actif simulé soit différent
     base_seed = 1234
 
     for i, sym in enumerate(symbols):
+        # Exemple : data/MSFT.csv
         csv_path = os.path.join(data_dir, f"{sym}.csv")
 
+        # Chargement ou simulation
         df_sym = _load_or_simulate_price(
             csv_path=csv_path,
-            start_date="2015-01-01",  # longer history for multi-asset tests
+            start_date="2015-01-01",
             n_days=2000,
             seed=base_seed + i,
         )
 
-        # Keep only the 'price' column and rename it to the symbol
+        # On garde la colonne "price" et on la renomme avec le nom du symbole
         s = df_sym["price"].rename(sym)
         series_by_symbol[sym] = s
 
-    # Align all symbols on a common date index
+    # Concaténation de toutes les séries dans un seul DataFrame
     df_all = pd.concat(
         [series_by_symbol[sym] for sym in symbols],
         axis=1,
     ).sort_index()
 
-    # Forward-fill missing values (e.g. holidays) and drop any leading NaNs
+    # On remplit les trous éventuels vers l'avant
+    # puis on enlève les NaN restants au début
     df_all = df_all.ffill().dropna()
 
     return df_all
