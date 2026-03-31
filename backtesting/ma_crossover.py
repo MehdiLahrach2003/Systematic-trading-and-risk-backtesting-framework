@@ -1,33 +1,42 @@
 # backtesting/ma_crossover.py
-# SMA crossover signal: returns positions based on short/long moving averages.
+# ---------------------------------------------------------
+# Stratégie SMA crossover :
+# on compare une moyenne courte et une moyenne longue
+# pour décider d’être long (+1), short (-1) ou flat (0)
+# ---------------------------------------------------------
 
 import pandas as pd
 
 
 def sma_crossover_positions(prices: pd.Series, short: int = 20, long: int = 100) -> pd.Series:
     """
-    Build a simple SMA crossover signal.
+    Construit une série de positions de trading.
 
-    Parameters
-    ----------
-    prices : pd.Series
-        Price series indexed by dates.
-    short : int
-        Window length for the short SMA.
-    long : int
-        Window length for the long SMA.
+    Entrée :
+        prices = série de prix
 
-    Returns
-    -------
-    pd.Series
-        Positions in {-1, 0, +1}, shifted by 1 bar to avoid lookahead.
-        +1 if SMA_short > SMA_long, -1 if SMA_short < SMA_long, 0 otherwise.
+    Sortie :
+        positions dans {-1, 0, +1}
     """
-    px = prices.astype(float)
-    sma_s = px.rolling(short, min_periods=1).mean()
-    sma_l = px.rolling(long,  min_periods=1).mean()
 
-    raw = (sma_s > sma_l).astype(int) - (sma_s < sma_l).astype(int)
-    pos = raw.shift(1).fillna(0.0)
-    pos.name = "position"
-    return pos
+    # On s'assure que les prix sont bien en float
+    px = prices.astype(float)
+
+    # Moyenne mobile courte (réagit vite)
+    sma_short = px.rolling(short, min_periods=1).mean()
+
+    # Moyenne mobile longue (plus lente)
+    sma_long = px.rolling(long, min_periods=1).mean()
+
+    # Signal brut :
+    # +1 si courte > longue
+    # -1 si courte < longue
+    #  0 sinon
+    raw_signal = (sma_short > sma_long).astype(int) - (sma_short < sma_long).astype(int)
+
+    # Décalage d’un jour (TRÈS IMPORTANT)
+    # → on utilise l’info d’hier pour trader aujourd’hui
+    positions = raw_signal.shift(1).fillna(0.0)
+
+    positions.name = "position"
+    return positions
