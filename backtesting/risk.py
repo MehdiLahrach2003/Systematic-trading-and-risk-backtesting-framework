@@ -1,5 +1,16 @@
 # backtesting/risk.py
-# Risk utilities: volatility targeting, drawdown, max drawdown, etc.
+# ------------------------------------------------------------
+# Ce fichier contient des outils simples de gestion du risque.
+#
+# Contrairement à risk_measures.py qui MESURE le risque
+# (VaR, CVaR, etc.), ici on agit plutôt sur la stratégie
+# ou on calcule des objets utiles liés au risque :
+#
+# - volatility targeting
+# - equity curve à partir des rendements
+# - drawdown
+# - maximum drawdown
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -8,119 +19,153 @@ import pandas as pd
 
 
 # ------------------------------------------------------------
-# 1) Volatility targeting overlay
+# 1) Volatility targeting
 # ------------------------------------------------------------
-
 def vol_target_positions(
     returns: pd.Series,
     positions: pd.Series,
-    target_vol_annual: float = 0.10,   # e.g. 10% annual vol target
-    lookback: int = 20,                # rolling window in trading days
-    ann_factor: int = 252,             # trading days per year
-    max_leverage: float = 3.0,         # cap on exposure magnitude
+    target_vol_annual: float = 0.10,   # volatilité annuelle cible, par exemple 10%
+    lookback: int = 20,                # fenêtre glissante pour estimer la vol
+    ann_factor: int = 252,             # nombre de jours de bourse par an
+    max_leverage: float = 3.0,         # borne maximale sur l'exposition
 ) -> pd.Series:
     """
-    Scale raw positions {-1,0,+1} to target an annualized volatility.
+    Ajuste la taille des positions pour viser une volatilité cible.
 
-    Parameters
+    Idée :
+    - si la volatilité observée est forte, on réduit l'exposition
+    - si la volatilité observée est faible, on augmente l'exposition
+
+    Paramètres
     ----------
     returns : pd.Series
-        Underlying daily returns (price.pct_change()) indexed by dates.
+        Rendements journaliers du sous-jacent.
     positions : pd.Series
-        Raw positions (e.g., {-1,0,+1}) indexed like `returns`.
-        Must already be shifted to avoid lookahead.
+        Positions brutes (par exemple -1, 0, +1), déjà décalées
+        pour éviter le lookahead bias.
     target_vol_annual : float
-        Desired annualized volatility for the strategy.
+        Volatilité annuelle cible de la stratégie.
     lookback : int
-        Rolling window (in days) for realized vol estimate.
+        Taille de la fenêtre glissante pour estimer la volatilité.
     ann_factor : int
-        Annualization factor (252 for daily data).
+        Facteur d'annualisation.
     max_leverage : float
-        Hard cap on absolute exposure.
+        Exposition maximale autorisée en valeur absolue.
 
-    Returns
-    -------
+    Retour
+    ------
     pd.Series
-        Scaled exposures (floats), clipped to +/- max_leverage.
+        Série d'expositions ajustées.
     """
+
+    # On nettoie les rendements
     ret = returns.astype(float).fillna(0.0)
 
-    # Realized vol estimate (annualized)
+    # Volatilité glissante journalière
     vol_daily = ret.rolling(lookback).std()
+
+    # Volatilité annualisée
     vol_annual = vol_daily * np.sqrt(ann_factor)
 
-    # Scale factor = target / realized
+    # Facteur d'ajustement = volatilité cible / volatilité observée
     scale = target_vol_annual / vol_annual.replace(0.0, np.nan)
+
+    # On borne le levier maximal
     scale = scale.clip(upper=max_leverage)
+
+    # On enlève les infinis / NaN éventuels
     scale = scale.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
+    # Nouvelle exposition = position brute × facteur d'ajustement
     expo = positions.astype(float) * scale
     expo.name = "exposure"
 
-    # Do NOT shift here; assume positions were already shifted in the signal.
+    # Important :
+    # on ne décale pas ici, car on suppose que les positions
+    # ont déjà été décalées au niveau du signal
     return expo
 
 
 # ------------------------------------------------------------
-# 2) Equity & drawdown helpers
+# 2) Equity curve à partir des rendements
 # ------------------------------------------------------------
-
 def equity_from_returns(returns: pd.Series, initial: float = 1.0) -> pd.Series:
     """
-    Turn a return series into an equity curve.
+    Transforme une série de rendements en courbe de capital.
 
-    Parameters
+    Paramètres
     ----------
     returns : pd.Series
-        Daily (or periodic) returns.
+        Rendements journaliers (ou périodiques).
     initial : float
-        Starting capital.
+        Capital initial.
 
-    Returns
-    -------
+    Retour
+    ------
     pd.Series
-        Equity curve.
+        Courbe d'equity.
     """
+
+    # Nettoyage
     ret = pd.Series(returns).astype(float).fillna(0.0)
+
+    # Capital cumulé
     eq = initial * (1.0 + ret).cumprod()
     eq.name = "equity"
     return eq
 
 
+# ------------------------------------------------------------
+# 3) Drawdown
+# ------------------------------------------------------------
 def drawdown(equity: pd.Series) -> pd.Series:
     """
-    Compute drawdown series from an equity curve.
+    Calcule la série de drawdown à partir d'une courbe d'equity.
 
-    Parameters
+    Le drawdown mesure la perte relative par rapport
+    au maximum historique atteint jusque-là.
+
+    Paramètres
     ----------
     equity : pd.Series
-        Equity curve indexed by dates.
+        Courbe de capital.
 
-    Returns
-    -------
+    Retour
+    ------
     pd.Series
-        Drawdown (values <= 0.0).
+        Série de drawdown (toujours <= 0).
     """
+
+    # Nettoyage
     eq = pd.Series(equity).astype(float)
+
+    # Maximum historique courant
     peak = eq.cummax()
+
+    # Drawdown = écart relatif au maximum passé
     dd = eq / peak - 1.0
     dd.name = "drawdown"
     return dd
 
 
+# ------------------------------------------------------------
+# 4) Maximum drawdown
+# ------------------------------------------------------------
 def max_drawdown(equity: pd.Series) -> float:
     """
-    Compute the maximum drawdown of an equity curve.
+    Calcule le maximum drawdown d'une courbe d'equity.
 
-    Parameters
+    Paramètres
     ----------
     equity : pd.Series
-        Equity curve.
+        Courbe de capital.
 
-    Returns
-    -------
+    Retour
+    ------
     float
-        Minimum drawdown (a negative number, e.g. -0.32 for -32%).
+        Plus mauvais drawdown observé.
+        Exemple : -0.32 signifie une perte max de 32%.
     """
+
     dd = drawdown(equity)
     return float(dd.min())
