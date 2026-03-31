@@ -1,10 +1,18 @@
 # backtesting/report.py
-"""
-Reporting helpers for backtests:
-- Drawdown and rolling Sharpe computation
-- Tear sheet plot (equity, rolling Sharpe, drawdown)
-- Trade log export to CSV
-"""
+# ------------------------------------------------------------
+# Ce fichier contient des outils de reporting pour les backtests.
+#
+# Il sert à :
+# - calculer le drawdown
+# - calculer un Sharpe glissant
+# - construire un tear sheet
+# - exporter les trades en CSV
+#
+# Attention :
+# ce fichier redéfinit un BacktestResult qui n'est pas exactement
+# le même que celui de engine.py. Il y a donc une petite incohérence
+# de structure dans le projet.
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -20,26 +28,29 @@ import matplotlib.pyplot as plt
 @dataclass
 class BacktestResult:
     """
-    Container for everything returned by the backtest engine.
+    Conteneur de reporting pour les résultats du backtest.
+
+    Attention :
+    ce format n'est pas exactement le même que celui de engine.py.
     """
     equity: pd.Series
-    returns_under: pd.Series        # underlying simple returns
-    strategy_ret: pd.Series         # strategy simple returns (net of costs)
-    costs: pd.Series                # transaction costs time series
-    positions: pd.Series            # position in {-1, 0, +1} (or size)
-    trades: Optional[pd.DataFrame]  # trade log (one row per trade)
-    metrics: Dict[str, Any]         # summary metrics (Sharpe, max DD, etc.)
+    returns_under: pd.Series        # rendements du sous-jacent
+    strategy_ret: pd.Series         # rendements de la stratégie
+    costs: pd.Series                # coûts de transaction
+    positions: pd.Series            # positions
+    trades: Optional[pd.DataFrame]  # journal de trades
+    metrics: Dict[str, Any]         # métriques résumées
 
 
-# ---------------------------------------------------------------------------
-# Risk / performance helpers
-# ---------------------------------------------------------------------------
-
+# ------------------------------------------------------------
+# 1) Calcul du drawdown
+# ------------------------------------------------------------
 def compute_drawdown(equity: pd.Series) -> pd.Series:
     """
-    Compute drawdown series from an equity curve.
+    Calcule la série de drawdown à partir de la courbe d'equity.
 
-    Drawdown_t = equity_t / max_{s <= t}(equity_s) - 1
+    Formule :
+        drawdown = equity / max_passé - 1
     """
     eq = equity.astype(float)
     running_max = eq.cummax()
@@ -48,12 +59,14 @@ def compute_drawdown(equity: pd.Series) -> pd.Series:
     return dd
 
 
+# ------------------------------------------------------------
+# 2) Sharpe glissant
+# ------------------------------------------------------------
 def rolling_sharpe(returns: pd.Series, window: int = 126) -> pd.Series:
     """
-    Compute rolling Sharpe ratio on a window of `window` observations.
+    Calcule le ratio de Sharpe sur fenêtre glissante.
 
-    Here we assume returns are daily simple returns and use:
-        Sharpe = mean(ret) / std(ret) * sqrt(252)
+    Ici, on suppose des rendements journaliers.
     """
     r = returns.astype(float)
     roll_mean = r.rolling(window).mean()
@@ -70,11 +83,10 @@ def compute_rolling_sharpe(
     ann_factor: int = 252,
 ) -> pd.Series:
     """
-    Backward-compatible wrapper used by some scripts.
+    Version compatible avec d'anciens scripts.
 
-    It does the same thing as `rolling_sharpe`, but with an explicit
-    annualization factor argument so older imports still work:
-        from backtesting.report import compute_rolling_sharpe
+    Fait la même chose que rolling_sharpe, mais avec un facteur
+    d'annualisation explicite.
     """
     r = returns.astype(float)
     roll_mean = r.rolling(window).mean()
@@ -86,46 +98,41 @@ def compute_rolling_sharpe(
     return sharpe
 
 
-# ---------------------------------------------------------------------------
-# Tear sheet plotting
-# ---------------------------------------------------------------------------
-
+# ------------------------------------------------------------
+# 3) Tear sheet
+# ------------------------------------------------------------
 def make_tear_sheet(
     result: BacktestResult,
     price: pd.Series,
     out_png: Optional[str] = None,
 ) -> None:
     """
-    Plot a simple tear sheet with:
-    - Strategy equity vs buy & hold (both rebased to 1.0)
-    - Rolling Sharpe (126 days)
-    - Drawdown
-
-    Parameters
-    ----------
-    result : BacktestResult
-        Output of the backtest engine.
-    price : pd.Series
-        Underlying price series (indexed by date).
-    out_png : str, optional
-        If provided, save the figure to this path.
+    Construit un tear sheet simple avec :
+    - equity de la stratégie vs buy-and-hold
+    - rolling Sharpe
+    - drawdown
     """
     eq = result.equity.astype(float)
+
+    # Rebase la stratégie à 1 pour comparer facilement
     eq_rebased = eq / eq.iloc[0]
 
+    # Benchmark buy-and-hold, lui aussi rebasé à 1
     bh = price.astype(float) / price.iloc[0]
     bh.name = "buy_and_hold"
 
+    # Objets de risque / performance
     dd = compute_drawdown(eq)
     roll_sh = rolling_sharpe(result.strategy_ret, window=126)
 
+    # Figure avec 3 panneaux
     fig, (ax1, ax2, ax3) = plt.subplots(
         3, 1, figsize=(12, 9),
         sharex=True,
         gridspec_kw={"height_ratios": [2, 1, 1]},
     )
 
-    # 1) Equity vs benchmark
+    # 1) Equity de la stratégie vs benchmark
     ax1.plot(eq_rebased.index, eq_rebased, label="Strategy", lw=1.5)
     ax1.plot(bh.index, bh, label="Buy & Hold", lw=1.2)
     ax1.set_ylabel("Index (× start)")
@@ -133,7 +140,7 @@ def make_tear_sheet(
     ax1.legend()
     ax1.grid(alpha=0.3)
 
-    # 2) Rolling Sharpe
+    # 2) Sharpe glissant
     ax2.plot(roll_sh.index, roll_sh, lw=1.2)
     ax2.axhline(0.0, color="black", lw=0.8)
     ax2.set_ylabel("Sharpe")
@@ -148,6 +155,7 @@ def make_tear_sheet(
 
     plt.tight_layout()
 
+    # Sauvegarde éventuelle
     if out_png is not None:
         os.makedirs(os.path.dirname(out_png), exist_ok=True)
         plt.savefig(out_png, dpi=150)
@@ -156,15 +164,14 @@ def make_tear_sheet(
     plt.show()
 
 
-# ---------------------------------------------------------------------------
-# Trade log export
-# ---------------------------------------------------------------------------
-
+# ------------------------------------------------------------
+# 4) Export du journal de trades
+# ------------------------------------------------------------
 def export_trades_to_csv(result: BacktestResult, out_csv: str) -> None:
     """
-    Export the trade log contained in `result.trades` to a CSV file.
+    Exporte le journal des trades vers un CSV.
 
-    The function is safe to call even if there are no trades.
+    Si aucun trade n'est présent, la fonction ne plante pas.
     """
     trades = result.trades
 
