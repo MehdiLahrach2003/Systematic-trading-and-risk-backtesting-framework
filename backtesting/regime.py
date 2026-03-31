@@ -1,5 +1,14 @@
 # backtesting/regime.py
-# Simple regime filters for trend-following strategies.
+# ------------------------------------------------------------
+# Filtre de régime de marché.
+#
+# Ce fichier permet de dire :
+# "est-ce que le marché est dans un bon état pour trader ?"
+#
+# Ici :
+# - si le prix est au-dessus de sa moyenne long terme → régime = 1
+# - sinon → régime = 0
+# ------------------------------------------------------------
 
 from dataclasses import dataclass
 import pandas as pd
@@ -8,40 +17,37 @@ import pandas as pd
 @dataclass
 class RegimeConfig:
     """
-    Configuration for the regime filter.
+    Paramètres du filtre de régime.
 
-    Attributes
-    ----------
-    long_window : int
-        Lookback window for the long-term moving average
-        used to define the regime.
+    long_window :
+    taille de la fenêtre pour la moyenne long terme
     """
     long_window: int = 200
 
 
 def long_only_regime(prices: pd.Series, config: RegimeConfig) -> pd.Series:
     """
-    Build a simple long-only regime filter based on a long-term SMA.
+    Construit un filtre de régime basé sur une moyenne mobile longue.
 
-    Regime is:
-      1.0 if price > SMA(long_window)
-      0.0 otherwise
-
-    Parameters
+    Paramètres
     ----------
-    prices : pd.Series
-        Price series indexed by dates.
-    config : RegimeConfig
-        Configuration with long_window.
+    prices : série de prix
+    config : configuration (fenêtre de moyenne)
 
-    Returns
+    Retour
     -------
-    pd.Series
-        Regime series in {0.0, 1.0}.
+    pd.Series avec valeurs :
+    - 1 → marché favorable
+    - 0 → marché défavorable
     """
+
     px = prices.astype(float)
+
+    # Moyenne mobile long terme
     sma_long = px.rolling(config.long_window, min_periods=1).mean()
 
+    # Régime : 1 si prix > moyenne, sinon 0
     regime = (px > sma_long).astype(float)
     regime.name = "regime"
+
     return regime
