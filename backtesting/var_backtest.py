@@ -1,9 +1,15 @@
 # backtesting/var_backtest.py
-"""
-Backtesting of Value-at-Risk (VaR):
-- Kupiec Unconditional Coverage Test (Likelihood Ratio)
-- Exception counting
-"""
+# ------------------------------------------------------------
+# Ce fichier sert à tester la qualité d'une VaR.
+#
+# Il contient :
+# - le comptage des exceptions de VaR
+# - le test de Kupiec
+#
+# Idée :
+# si une VaR à 5% est correcte, alors environ 5% des jours
+# doivent dépasser cette VaR.
+# ------------------------------------------------------------
 
 from __future__ import annotations
 import numpy as np
@@ -12,80 +18,98 @@ import math
 
 
 # ------------------------------------------------------------
-# Count VaR breaches (exceptions)
+# 1) Comptage des exceptions de VaR
 # ------------------------------------------------------------
 def count_exceptions(returns: pd.Series, var_series: pd.Series) -> int:
     """
-    Count the number of VaR breaches: returns < -VaR.
+    Compte le nombre de violations de VaR.
 
-    Parameters
+    Une violation a lieu si :
+        rendement < -VaR
+
+    Paramètres
     ----------
     returns : pd.Series
-        Strategy daily returns.
+        Rendements journaliers de la stratégie.
     var_series : pd.Series
-        Daily VaR values (positive numbers representing a loss).
+        Série temporelle de VaR, exprimée comme une perte positive.
 
-    Returns
-    -------
+    Retour
+    ------
     int
-        Number of exceptions.
+        Nombre d'exceptions observées.
     """
+
+    # On enlève les NaN des rendements
     r = returns.dropna()
+
+    # On aligne la série de VaR sur les mêmes dates
     v = var_series.reindex(r.index).dropna()
 
-    # Align both
+    # Si les tailles ne sont pas exactement les mêmes,
+    # on garde la partie commune finale
     if len(v) != len(r):
         min_len = min(len(r), len(v))
         r = r.iloc[-min_len:]
         v = v.iloc[-min_len:]
 
+    # Exception = rendement plus mauvais que -VaR
     breaches = r < -v
+
     return int(breaches.sum())
 
 
 # ------------------------------------------------------------
-# Kupiec LR test
+# 2) Test de Kupiec
 # ------------------------------------------------------------
 def kupiec_test(returns: pd.Series, var_series: pd.Series, alpha: float = 0.05) -> dict:
     """
-    Kupiec (1995) Unconditional Coverage Test.
-    
-    H0: The true exception probability = alpha.
+    Test de Kupiec (1995), dit de couverture inconditionnelle.
 
-    LRuc = -2 log( (1-alpha)^(T-N) * alpha^N / ( (1-p)^(T-N) * p^N ) )
-    where p = N/T.
+    Hypothèse nulle :
+        la vraie probabilité d'exception est égale à alpha.
 
-    Parameters
+    Paramètres
     ----------
     returns : pd.Series
-        Strategy daily returns.
+        Rendements de la stratégie.
     var_series : pd.Series
-        VaR time series.
+        Série de VaR.
     alpha : float
-        Target VaR level (e.g., 0.05 for 95% VaR).
+        Niveau théorique de la VaR, par exemple 0.05.
 
-    Returns
-    -------
+    Retour
+    ------
     dict
-        Keys: N (exceptions), T, p_hat, LRuc, p_value
+        Contient :
+        - N : nombre d'exceptions
+        - T : nombre total d'observations
+        - p_hat : fréquence observée des exceptions
+        - LRuc : statistique du test
+        - p_value : p-value du test
     """
+
     r = returns.dropna()
     v = var_series.reindex(r.index).dropna()
 
+    # Alignement défensif
     if len(v) != len(r):
         min_len = min(len(r), len(v))
         r = r.iloc[-min_len:]
         v = v.iloc[-min_len:]
 
+    # Détection des exceptions
     breaches = r < -v
-    N = int(breaches.sum())
-    T = len(r)
+    N = int(breaches.sum())   # nombre d'exceptions
+    T = len(r)                # nombre total d'observations
+
     if T == 0:
         return {}
 
+    # Fréquence observée des exceptions
     p_hat = N / T
 
-    # Avoid log(0)
+    # Cas extrêmes pour éviter log(0)
     if p_hat in (0.0, 1.0):
         return {
             "N": N,
@@ -95,11 +119,12 @@ def kupiec_test(returns: pd.Series, var_series: pd.Series, alpha: float = 0.05) 
             "p_value": 0.0,
         }
 
+    # Statistique du test de Kupiec
     num = ((1 - alpha) ** (T - N)) * (alpha ** N)
     den = ((1 - p_hat) ** (T - N)) * (p_hat ** N)
     LRuc = -2 * math.log(num / den)
 
-    # LRuc ~ chi2(1 df)
+    # Sous H0, LRuc suit approximativement une loi du chi2 à 1 ddl
     p_value = 1 - chi2_cdf(LRuc, df=1)
 
     return {
@@ -112,13 +137,16 @@ def kupiec_test(returns: pd.Series, var_series: pd.Series, alpha: float = 0.05) 
 
 
 # ------------------------------------------------------------
-# Chi-square CDF (manual small helper)
+# 3) Fonction technique : CDF du chi2
 # ------------------------------------------------------------
 def chi2_cdf(x: float, df: int = 1) -> float:
     """
-    CDF of chi-square distribution with df degrees of freedom.
-    For df = 1, CDF = erf(sqrt(x/2)).
+    Fonction de répartition de la loi du chi2.
+
+    Ici, seule la version à 1 degré de liberté est implémentée,
+    car c'est le cas utile pour le test de Kupiec.
     """
     if df != 1:
         raise NotImplementedError("Only df=1 implemented for Kupiec test.")
+
     return math.erf(math.sqrt(x / 2))
