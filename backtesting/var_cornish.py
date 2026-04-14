@@ -1,10 +1,16 @@
 # backtesting/var_cornish.py
-"""
-Cornish–Fisher adjusted Value-at-Risk (VaR) to account for skewness and kurtosis.
-
-This improves on Gaussian VaR by expanding the quantile using a polynomial
-correction based on higher-order moments.
-"""
+# ------------------------------------------------------------
+# Ce fichier calcule une VaR de Cornish-Fisher.
+#
+# Idée :
+# la VaR gaussienne suppose que les rendements suivent une loi normale.
+# Mais en finance, ce n'est souvent pas vrai :
+# - asymétrie possible
+# - queues épaisses
+#
+# La correction de Cornish-Fisher ajuste donc le quantile gaussien
+# à l'aide de la skewness et de la kurtosis.
+# ------------------------------------------------------------
 
 from __future__ import annotations
 import numpy as np
@@ -14,12 +20,12 @@ import math
 
 def _compute_moments(returns: pd.Series) -> tuple[float, float, float]:
     """
-    Compute mean, skewness, and excess kurtosis of returns.
-
-    Returns
-    -------
-    (mu, skew, kurt_excess)
+    Calcule :
+    - la moyenne
+    - la skewness
+    - la kurtosis excédentaire
     """
+
     r = returns.dropna().astype(float)
     if len(r) == 0:
         return np.nan, np.nan, np.nan
@@ -27,42 +33,40 @@ def _compute_moments(returns: pd.Series) -> tuple[float, float, float]:
     mu = r.mean()
     sigma = r.std()
 
+    # Si la volatilité est nulle ou s'il n'y a pas assez de données,
+    # on ne peut pas calculer proprement les moments supérieurs
     if sigma == 0 or len(r) < 4:
-        return mu, 0.0, 0.0  # no higher moments possible
+        return mu, 0.0, 0.0
 
-    # Standardized returns
+    # Standardisation des rendements
     z = (r - mu) / sigma
 
+    # Skewness empirique
     skew = float((z**3).mean())
-    kurt_excess = float((z**4).mean() - 3.0)  # excess kurtosis
+
+    # Kurtosis excédentaire empirique
+    kurt_excess = float((z**4).mean() - 3.0)
 
     return mu, skew, kurt_excess
 
 
 def cornish_fisher_var(returns: pd.Series, alpha: float = 0.05) -> float:
     """
-    Cornish–Fisher VaR correction.
+    Calcule la VaR corrigée par Cornish-Fisher.
 
-    Formula:
-        z_cf = z
-               + (1/6)(z^2 - 1) * skew
-               + (1/24)(z^3 - 3z) * kurt_excess
-               - (1/36)(2z^3 - 5z) * skew^2
-
-    VaR = -(mu + sigma * z_cf)
-
-    Parameters
+    Paramètres
     ----------
     returns : pd.Series
-        Strategy simple returns.
+        Rendements simples de la stratégie.
     alpha : float
-        Tail probability.
+        Niveau de queue (ex : 0.05).
 
-    Returns
-    -------
+    Retour
+    ------
     float
-        Cornish–Fisher VaR (positive number representing a loss).
+        VaR Cornish-Fisher (positive = perte)
     """
+
     r = returns.dropna().astype(float)
     if len(r) == 0:
         return np.nan
@@ -70,42 +74,44 @@ def cornish_fisher_var(returns: pd.Series, alpha: float = 0.05) -> float:
     mu = r.mean()
     sigma = r.std()
 
-    # Gaussian quantile
+    # Quantile gaussien standard
     z = float(np.quantile(np.random.standard_normal(500_000), alpha))
 
-    # Higher-order moments
+    # Moments supérieurs
     _, skew, kurt_excess = _compute_moments(r)
 
-    # Cornish–Fisher expanded quantile
+    # Quantile corrigé de Cornish-Fisher
     z_cf = (
         z
-        + (1/6)*(z*z - 1)*skew
-        + (1/24)*(z**3 - 3*z)*kurt_excess
-        - (1/36)*(2*z**3 - 5*z)*skew*skew
+        + (1/6) * (z*z - 1) * skew
+        + (1/24) * (z**3 - 3*z) * kurt_excess
+        - (1/36) * (2*z**3 - 5*z) * skew * skew
     )
 
-    # VaR is minus the quantile
+    # VaR = opposé du quantile corrigé
     return float(-(mu + sigma * z_cf))
 
 
 def compute_cornish_report(returns: pd.Series, alpha: float = 0.05) -> dict:
     """
-    Return a dictionary with:
-        - Gaussian VaR
-        - Cornish–Fisher VaR
-        - Difference in %
+    Compare :
+    - la VaR gaussienne
+    - la VaR Cornish-Fisher
+
+    et renvoie aussi l'ajustement relatif en pourcentage.
     """
+
     r = returns.dropna()
     if len(r) == 0:
         return {}
 
-    # Gaussian approximation
+    # VaR gaussienne
     mu = r.mean()
     sigma = r.std()
     z = float(np.quantile(np.random.standard_normal(500_000), alpha))
-    var_gauss = -(mu + sigma*z)
+    var_gauss = -(mu + sigma * z)
 
-    # Cornish–Fisher adjusted
+    # VaR Cornish-Fisher
     var_cf = cornish_fisher_var(r, alpha)
 
     return {
