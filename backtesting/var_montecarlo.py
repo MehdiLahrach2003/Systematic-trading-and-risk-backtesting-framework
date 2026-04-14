@@ -1,9 +1,11 @@
 # backtesting/var_montecarlo.py
-"""
-Monte Carlo estimation of VaR and CVaR:
-- Parametric MC (Gaussian)
-- Bootstrap MC (sampling historical returns)
-"""
+# ------------------------------------------------------------
+# Ce fichier calcule la VaR et la CVaR par simulation Monte Carlo.
+#
+# Deux approches :
+# - Monte Carlo paramétrique (hypothèse gaussienne)
+# - Monte Carlo bootstrap (rééchantillonnage historique)
+# ------------------------------------------------------------
 
 from __future__ import annotations
 import numpy as np
@@ -11,7 +13,7 @@ import pandas as pd
 
 
 # ------------------------------------------------------------
-# Parametric Monte Carlo VaR / CVaR
+# 1) Monte Carlo paramétrique
 # ------------------------------------------------------------
 def mc_var_parametric(
     returns: pd.Series,
@@ -19,28 +21,41 @@ def mc_var_parametric(
     n_sims: int = 20_000
 ) -> tuple[float, float]:
     """
-    Gaussian Monte Carlo VaR and CVaR.
-    
-    We simulate returns ~ N(mu, sigma^2) and compute tail losses.
+    Calcule la VaR et la CVaR par simulation Monte Carlo paramétrique.
 
-    Returns
-    -------
+    Hypothèse :
+    les rendements suivent une loi normale N(mu, sigma^2).
+
+    Paramètres
+    ----------
+    returns : pd.Series
+        Rendements historiques.
+    alpha : float
+        Niveau de queue (ex : 0.05).
+    n_sims : int
+        Nombre de simulations Monte Carlo.
+
+    Retour
+    ------
     (VaR, CVaR)
     """
+
     r = returns.dropna().astype(float)
     if len(r) == 0:
         return np.nan, np.nan
 
+    # Estimation des paramètres de la loi normale
     mu = r.mean()
     sigma = r.std()
 
+    # Simulation de nombreux rendements gaussiens
     sims = np.random.normal(mu, sigma, size=n_sims)
     sims = np.sort(sims)
 
-    # VaR = negative alpha-quantile
+    # VaR = opposé du quantile alpha
     var_mc = -np.percentile(sims, alpha * 100)
 
-    # CVaR = average of worst alpha% outcomes
+    # CVaR = moyenne des pires alpha% rendements
     cutoff = int(alpha * n_sims)
     cvar_mc = -sims[:cutoff].mean()
 
@@ -48,7 +63,7 @@ def mc_var_parametric(
 
 
 # ------------------------------------------------------------
-# Bootstrap Monte Carlo VaR / CVaR
+# 2) Monte Carlo bootstrap
 # ------------------------------------------------------------
 def mc_var_bootstrap(
     returns: pd.Series,
@@ -56,21 +71,37 @@ def mc_var_bootstrap(
     n_sims: int = 20_000
 ) -> tuple[float, float]:
     """
-    Bootstrap Monte Carlo VaR and CVaR.
-    We randomly sample returns *with replacement* from historical data.
+    Calcule la VaR et la CVaR par bootstrap Monte Carlo.
 
-    Returns
-    -------
+    Idée :
+    on tire au hasard, avec remise, parmi les rendements historiques.
+
+    Paramètres
+    ----------
+    returns : pd.Series
+        Rendements historiques.
+    alpha : float
+        Niveau de queue (ex : 0.05).
+    n_sims : int
+        Nombre de simulations.
+
+    Retour
+    ------
     (VaR, CVaR)
     """
+
     r = returns.dropna().astype(float)
     if len(r) == 0:
         return np.nan, np.nan
 
+    # Rééchantillonnage avec remise
     sims = np.random.choice(r, size=n_sims, replace=True)
     sims = np.sort(sims)
 
+    # VaR = opposé du quantile alpha
     var_mc = -np.percentile(sims, alpha * 100)
+
+    # CVaR = moyenne des pires alpha% scénarios
     cutoff = int(alpha * n_sims)
     cvar_mc = -sims[:cutoff].mean()
 
