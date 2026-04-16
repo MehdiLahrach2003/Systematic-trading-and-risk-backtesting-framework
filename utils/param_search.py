@@ -1,5 +1,12 @@
 # utils/param_search.py
-# Grid-search utilities for SMA crossover parameters.
+
+# ------------------------------------------------------------
+# Outils de grid-search pour les paramètres de la stratégie SMA crossover.
+#
+# Objectif :
+# tester plusieurs couples (short, long)
+# et mesurer leurs performances.
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -16,31 +23,77 @@ def evaluate_sma_grid(
     shorts: Iterable[int],
     longs: Iterable[int],
     cost_bps: float = 1.0,
-    criterion: str = "sharpe",         # "sharpe" | "cumret"
+    criterion: str = "sharpe",         # "sharpe" ou "cumret"
     initial_capital: float = 1.0,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Brute-force grid over (short, long) SMA windows.
+    Recherche exhaustive sur une grille de paramètres SMA.
 
-    Returns
-    -------
-    results_df : long-form table with metrics for each (short, long)
-    pivot      : matrix (rows=long, cols=short) of the selected criterion
+    On teste tous les couples :
+        (short, long)
+    avec la contrainte :
+        short < long
+
+    Paramètres
+    ----------
+    df : DataFrame
+        doit contenir une colonne 'price'
+    shorts : iterable[int]
+        liste des fenêtres courtes à tester
+    longs : iterable[int]
+        liste des fenêtres longues à tester
+    cost_bps : float
+        coût de transaction en basis points
+    criterion : str
+        critère pour la matrice pivot :
+        - "sharpe"
+        - "cumret"
+    initial_capital : float
+        capital initial du backtest
+
+    Retour
+    ------
+    results_df : DataFrame
+        tableau détaillé avec une ligne par couple (short, long)
+    pivot : DataFrame
+        matrice de la métrique choisie
+        lignes = long
+        colonnes = short
     """
+
+    # --------------------------------------------------------
+    # 1) Vérification de la présence de la colonne 'price'
+    # --------------------------------------------------------
     if "price" not in df.columns:
         raise ValueError("DataFrame must contain 'price'.")
 
     price = df["price"].astype(float)
 
     rows = []
+
+    # --------------------------------------------------------
+    # 2) Boucle sur toutes les combinaisons de paramètres
+    # --------------------------------------------------------
     for s in shorts:
         for l in longs:
+
+            # On ignore les cas absurdes :
+            # une moyenne courte doit être plus courte que la longue
             if s >= l:
                 continue
 
+            # Construction du signal SMA correspondant
             pos = sma_crossover_positions(price, short=s, long=l)
-            res = run_backtest(price, pos, cost_bps=cost_bps, initial_capital=initial_capital)
 
+            # Backtest de cette stratégie
+            res = run_backtest(
+                price,
+                pos,
+                cost_bps=cost_bps,
+                initial_capital=initial_capital
+            )
+
+            # On stocke les métriques importantes
             rows.append(
                 {
                     "short": s,
@@ -52,13 +105,30 @@ def evaluate_sma_grid(
                 }
             )
 
+    # --------------------------------------------------------
+    # 3) Conversion en DataFrame
+    # --------------------------------------------------------
     results_df = pd.DataFrame(rows)
+
+    # Si aucune combinaison valide n'a été trouvée
     if results_df.empty:
         return results_df, pd.DataFrame()
 
-    # pivot for quick inspection / heatmap
+    # --------------------------------------------------------
+    # 4) Choix du critère pour la matrice pivot
+    # --------------------------------------------------------
     if criterion not in {"sharpe", "cumret"}:
         criterion = "sharpe"
-    pivot = results_df.pivot_table(index="long", columns="short", values=criterion, aggfunc="mean")
+
+    # Construction d'une matrice :
+    # lignes = fenêtres longues
+    # colonnes = fenêtres courtes
+    # valeurs = critère choisi
+    pivot = results_df.pivot_table(
+        index="long",
+        columns="short",
+        values=criterion,
+        aggfunc="mean"
+    )
 
     return results_df, pivot
