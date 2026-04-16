@@ -1,5 +1,12 @@
 # utils/risk_mc.py
-# Simple Monte Carlo risk analysis based on a strategy's daily returns.
+
+# ------------------------------------------------------------
+# Monte Carlo simple basé sur les rendements historiques
+#
+# Objectif :
+# - simuler des trajectoires futures de la stratégie
+# - estimer les risques (drawdown, perte, etc.)
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -16,50 +23,70 @@ def monte_carlo_from_returns(
     seed: int | None = 42,
 ) -> pd.DataFrame:
     """
-    Run a simple Monte Carlo on strategy returns.
+    Monte Carlo par bootstrap des rendements.
 
-    We resample (with replacement) from historical daily returns and
-    build synthetic equity paths. For each path we compute:
-    - final equity (starting from 1.0)
-    - max drawdown over the path.
+    Principe :
+    - on tire aléatoirement (avec remise) des rendements passés
+    - on reconstruit une trajectoire d'equity
+    - on mesure ses propriétés
 
-    Parameters
+    Paramètres
     ----------
     returns : pd.Series
-        Daily returns of the strategy (e.g. equity.pct_change()).
+        rendements journaliers de la stratégie
     n_paths : int
-        Number of Monte Carlo paths to simulate.
+        nombre de scénarios simulés
     horizon : int
-        Number of days per simulated path (e.g. 252 for 1 year).
+        nombre de jours simulés (ex: 252 = 1 an)
     seed : int | None
-        Random seed for reproducibility (None = no fixed seed).
+        graine aléatoire
 
-    Returns
+    Retour
     -------
-    pd.DataFrame
-        DataFrame with columns:
-        - 'final_equity'
-        - 'max_drawdown'
+    DataFrame avec :
+        - final_equity
+        - max_drawdown
     """
+
+    # --------------------------------------------------------
+    # 1) Nettoyage des rendements
+    # --------------------------------------------------------
     ret = returns.dropna().to_numpy()
+
     if ret.size == 0:
         raise ValueError("returns series is empty – cannot run Monte Carlo.")
 
+    # Générateur aléatoire
     rng = np.random.default_rng(seed)
 
+    # Tableaux pour stocker les résultats
     final_equity = np.empty(n_paths)
     max_dd = np.empty(n_paths)
 
+    # --------------------------------------------------------
+    # 2) Boucle Monte Carlo
+    # --------------------------------------------------------
     for i in range(n_paths):
-        # Sample daily returns with replacement
+
+        # Tirage aléatoire avec remise
         sample = rng.choice(ret, size=horizon, replace=True)
 
-        # Build equity path starting from 1.0
-        equity_path = pd.Series(np.cumprod(1.0 + sample), index=range(horizon))
+        # Construction de la trajectoire d'equity :
+        # equity_t = produit des (1 + returns)
+        equity_path = pd.Series(
+            np.cumprod(1.0 + sample),
+            index=range(horizon)
+        )
 
+        # Valeur finale
         final_equity[i] = equity_path.iloc[-1]
+
+        # Max drawdown de cette trajectoire
         max_dd[i] = max_drawdown(equity_path)
 
+    # --------------------------------------------------------
+    # 3) Retour des résultats
+    # --------------------------------------------------------
     return pd.DataFrame(
         {
             "final_equity": final_equity,
