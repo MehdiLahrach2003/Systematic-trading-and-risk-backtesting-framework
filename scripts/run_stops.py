@@ -1,11 +1,19 @@
 # scripts/run_stops.py
-# Compare SMA crossover with and without stop-loss / take-profit.
+# ------------------------------------------------------------
+# Ce script compare une stratégie SMA crossover :
+# - sans stops
+# - avec stop-loss et take-profit
+#
+# Objectif :
+# voir si l'ajout de règles de protection améliore
+# la performance ou réduit le risque.
+# ------------------------------------------------------------
 
 import os
 import sys
 import matplotlib.pyplot as plt
 
-# --- Make 'quant-journey' package importable ---
+# Permet d'importer les modules du projet quand on lance ce script directement
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from utils.data_loader import load_prices
@@ -15,7 +23,12 @@ from backtesting.rules import StopConfig, apply_stop_loss_take_profit
 
 
 def plot_equity_comparison(base_res, stopped_res):
-    """Plot equity curves for baseline SMA and SMA + stops."""
+    """
+    Trace les courbes d'equity de :
+    - la stratégie de base
+    - la stratégie avec stops
+    """
+    # Rebase à 1 pour comparer plus facilement
     eq_base = base_res.equity / base_res.equity.iloc[0]
     eq_stop = stopped_res.equity / stopped_res.equity.iloc[0]
 
@@ -30,14 +43,21 @@ def plot_equity_comparison(base_res, stopped_res):
     plt.grid(alpha=0.3)
     plt.tight_layout()
 
-    out_png = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "stops_equity.png")
+    # Sauvegarde de la figure
+    out_png = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data",
+        "stops_equity.png"
+    )
     plt.savefig(out_png, dpi=150)
     print(f"[OK] Equity comparison saved → {out_png}")
     plt.show()
 
 
 def print_metrics(title: str, result):
-    """Pretty-print result metrics."""
+    """
+    Affiche proprement les métriques du backtest.
+    """
     print(f"\n===== {title} =====")
     for k, v in result.metrics.items():
         print(f"{k:25s}: {v:.4f}")
@@ -45,14 +65,20 @@ def print_metrics(title: str, result):
 
 
 def main():
-    # 1) Load prices
+    # ------------------------------------------------------------
+    # 1) Chargement des données
+    # ------------------------------------------------------------
     df = load_prices()
     price = df["price"]
 
-    # 2) Build baseline positions
+    # ------------------------------------------------------------
+    # 2) Construction de la stratégie de base
+    # ------------------------------------------------------------
     base_positions = sma_crossover_positions(price, short=20, long=100)
 
-    # 3) Backtest baseline (NO NAMED ARGUMENT 'price=' !!!)
+    # ------------------------------------------------------------
+    # 3) Backtest de la stratégie sans stops
+    # ------------------------------------------------------------
     base_res = run_backtest(
         price,
         base_positions,
@@ -60,20 +86,26 @@ def main():
         initial_capital=1.0,
     )
 
-    # 4) Stop parameters
+    # ------------------------------------------------------------
+    # 4) Définition des paramètres de stops
+    # ------------------------------------------------------------
     cfg = StopConfig(
-        stop_loss_pct=0.05,
-        take_profit_pct=0.10,
+        stop_loss_pct=0.05,    # couper si perte de 5%
+        take_profit_pct=0.10,  # sortir si gain de 10%
     )
 
-    # 5) Apply stop-loss / take-profit
+    # ------------------------------------------------------------
+    # 5) Application des stops à la stratégie
+    # ------------------------------------------------------------
     stopped_positions = apply_stop_loss_take_profit(
-        prices =price,
+        prices=price,
         base_positions=base_positions,
         config=cfg,
     )
 
-    # 6) Backtest with stops
+    # ------------------------------------------------------------
+    # 6) Backtest de la stratégie avec stops
+    # ------------------------------------------------------------
     stopped_res = run_backtest(
         price,
         stopped_positions,
@@ -81,11 +113,15 @@ def main():
         initial_capital=1.0,
     )
 
-    # 7) Print metrics
+    # ------------------------------------------------------------
+    # 7) Comparaison des métriques
+    # ------------------------------------------------------------
     print_metrics("SMA 20/100 (no stops)", base_res)
     print_metrics("SMA 20/100 + stops", stopped_res)
 
-    # 8) Plot result
+    # ------------------------------------------------------------
+    # 8) Comparaison visuelle
+    # ------------------------------------------------------------
     plot_equity_comparison(base_res, stopped_res)
 
 
