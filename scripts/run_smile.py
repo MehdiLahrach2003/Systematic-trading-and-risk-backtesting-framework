@@ -1,24 +1,31 @@
 # scripts/run_smile.py
-# Build and plot a Black–Scholes volatility smile from synthetic option prices.
+# ------------------------------------------------------------
+# Ce script cherche à construire un smile de volatilité implicite
+# à partir de prix d'options synthétiques.
+#
+# Idée :
+# - choisir plusieurs strikes
+# - générer des prix de calls
+# - retrouver la vol implicite associée à chaque prix
+# - tracer la vol implicite en fonction du strike
+#
+# Attention :
+# dans la version actuelle, les prix sont générés avec une vol constante,
+# donc le smile implicite obtenu devrait être presque plat.
+# ------------------------------------------------------------
 
 import os
 import sys
-
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --------------------------------------------------------------------
-# Make the project root importable (so "pricing.*" works when you Run)
-# --------------------------------------------------------------------
+# Permet d'importer les modules du projet quand on lance ce script directement
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from pricing.black_scholes import bs_call_price   # your BS call pricer
-from pricing.implied_vol import implied_vol_bs    # <-- IMPORTANT: function name
+from pricing.black_scholes import bs_call_price
+from pricing.implied_vol import implied_vol_bs
 
 
-# --------------------------------------------------------------------
-# Smile construction
-# --------------------------------------------------------------------
 def build_smile(
     S0: float,
     r: float,
@@ -27,60 +34,49 @@ def build_smile(
     n_strikes: int = 17,
 ):
     """
-    Build a simple volatility smile from synthetic Black–Scholes prices.
-
-    Parameters
-    ----------
-    S0 : float
-        Spot price of the underlying.
-    r : float
-        Risk-free rate (continuously compounded).
-    T : float
-        Time to maturity in years.
-    true_sigma : float
-        "Real" volatility used to generate option prices.
-    n_strikes : int
-        Number of strikes between 60% and 140% moneyness.
-
-    Returns
-    -------
-    strikes : np.ndarray
-    true_vols : np.ndarray
-    call_prices : np.ndarray
-    implied_vols : np.ndarray
+    Construit une grille de strikes, des prix de calls,
+    puis les volatilités implicites associées.
     """
-    # Strike grid between 60% and 140% of spot
+
+    # Grille de strikes entre 60% et 140% du spot
     K_min, K_max = 0.6 * S0, 1.4 * S0
     strikes = np.linspace(K_min, K_max, n_strikes)
 
+    # Courbe de volatilité "théorique" en forme de smile
     true_vols = 0.20 + 0.3 * ((strikes / S0 - 1.0) ** 2)
+
     call_prices = np.zeros_like(strikes, dtype=float)
     implied_vols = np.zeros_like(strikes, dtype=float)
 
     for i, K in enumerate(strikes):
-        # 1) Generate call price from BS model
+        # ------------------------------------------------------------
+        # Prix du call
+        # ------------------------------------------------------------
+        # ATTENTION :
+        # ici le script utilise une volatilité constante true_sigma,
+        # et non true_vols[i].
+        # Donc les prix sont en réalité ceux d'un modèle BS standard.
         price = bs_call_price(S0, K, r, true_sigma, T)
         call_prices[i] = price
 
-        # 2) Invert price -> implied volatility
-        iv = implied_vol_bs(price, S0, K, r, T)
+        # Inversion prix -> volatilité implicite
+        iv = implied_vol_bs(price, S0, K, r, T) # type: ignore
         implied_vols[i] = iv
 
     return strikes, true_vols, call_prices, implied_vols
 
 
-# --------------------------------------------------------------------
-# Plotting helpers
-# --------------------------------------------------------------------
 def plot_smile(strikes, true_vols, implied_vols, S0: float):
     """
-    Plot implied vol vs strike and vs moneyness.
+    Trace :
+    - volatilité implicite en fonction du strike
+    - volatilité implicite en fonction de la moneyness
     """
     moneyness = strikes / S0
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # --- Implied vol vs strike ---
+    # Smile en fonction du strike
     ax = axes[0]
     ax.plot(strikes, implied_vols, "o-", label="Implied vol (from prices)")
     ax.plot(strikes, true_vols, "--", label="True vol (input)")
@@ -90,7 +86,7 @@ def plot_smile(strikes, true_vols, implied_vols, S0: float):
     ax.grid(alpha=0.3)
     ax.legend()
 
-    # --- Implied vol vs moneyness ---
+    # Smile en fonction de la moneyness
     ax2 = axes[1]
     ax2.plot(moneyness, implied_vols, "o-", label="Implied vol")
     ax2.axvline(1.0, color="grey", ls="--", lw=0.8)
@@ -102,7 +98,6 @@ def plot_smile(strikes, true_vols, implied_vols, S0: float):
 
     plt.tight_layout()
 
-    # Optional: save figure to data/
     out_png = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
         "data",
@@ -115,11 +110,7 @@ def plot_smile(strikes, true_vols, implied_vols, S0: float):
     plt.show()
 
 
-# --------------------------------------------------------------------
-# Main script
-# --------------------------------------------------------------------
 def main():
-    # Model parameters (you can tweak them)
     S0 = 100.0
     r = 0.01
     T = 1.0
@@ -133,12 +124,10 @@ def main():
         n_strikes=17,
     )
 
-    # Quick text summary in terminal
     print("\nStrike   CallPrice   ImpliedVol")
     for K, c, iv in zip(strikes, call_prices, implied_vols):
         print(f"{K:7.2f}   {c:9.4f}   {iv:10.4f}")
 
-    # Plot the smile
     plot_smile(strikes, true_vols, implied_vols, S0=S0)
 
 
