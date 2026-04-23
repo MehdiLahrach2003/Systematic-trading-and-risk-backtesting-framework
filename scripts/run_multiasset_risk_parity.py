@@ -1,12 +1,22 @@
 # scripts/run_multiasset_risk_parity.py
-"""
-Multi-asset SMA 20/100 strategies combined in an inverse-volatility (risk-parity)
-portfolio.
 
-Assumptions:
-- You already have daily close data in data/MSFT.csv, data/AAPL.csv, etc.
-- utils.data_loader exposes a `load_multi_assets(symbols)` function that
-  returns a DataFrame with one price column per symbol.
+"""
+Portefeuille multi-actifs de type "risk parity" simplifié
+à partir de stratégies SMA 20/100.
+
+Idée :
+- on applique la stratégie SMA 20/100 sur plusieurs actifs
+- on backteste chaque stratégie séparément
+- on mesure la volatilité de chaque stratégie
+- on attribue à chaque stratégie un poids proportionnel à 1 / volatilité
+- on combine ensuite les stratégies dans un portefeuille
+
+Attention :
+ici, "risk parity" est pris dans un sens simple :
+    poids ∝ 1 / volatilité
+
+Ce n'est pas le risk parity complet avec prise en compte explicite
+des corrélations, mais c'est déjà une approximation très utilisée.
 """
 
 import os
@@ -16,7 +26,9 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Make project root importable (so 'backtesting.*' and 'utils.*' work)
+# ------------------------------------------------------------
+# Permet d'importer les modules du projet quand on lance ce script directement
+# ------------------------------------------------------------
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from utils.data_loader import load_multi_assets
@@ -25,69 +37,82 @@ from backtesting.engine import run_backtest
 from backtesting.portfolio import combine_backtests
 
 
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
+# ============================================================
+# 1) Construire les stratégies SMA sur chaque actif
+# ============================================================
 def build_sma_strategies(df_prices):
     """
-    For each asset in df_prices, build a SMA 20/100 strategy and run a backtest.
+    Pour chaque actif :
+    - construit les positions SMA 20/100
+    - lance le backtest
+    - stocke le résultat
 
-    Parameters
-    ----------
-    df_prices : pd.DataFrame
-        Columns = asset symbols, index = dates, values = prices.
+    Paramètre
+    ---------
+    df_prices : DataFrame
+        colonnes = actifs, valeurs = prix
 
-    Returns
-    -------
+    Retour
+    ------
     dict[str, BacktestResult]
-        One BacktestResult per asset.
     """
     results = {}
 
     for symbol in df_prices.columns:
         price = df_prices[symbol].dropna()
 
-        # Build SMA crossover positions (+1 / 0 / -1)
+        # Signal SMA 20/100
         pos = sma_crossover_positions(price, short=20, long=100)
 
-        # Run backtest on this single asset
+        # Backtest de la stratégie sur cet actif
         res = run_backtest(price, pos, cost_bps=1.0, initial_capital=1.0)
+
         results[symbol] = res
 
     return results
 
 
+# ============================================================
+# 2) Calcul des poids inverse-volatilité
+# ============================================================
 def compute_inverse_vol_weights(results):
     """
-    Compute inverse-volatility weights from strategy returns.
+    Calcule des poids proportionnels à 1 / volatilité.
 
-    Parameters
-    ----------
+    Logique :
+    - une stratégie très volatile reçoit moins de poids
+    - une stratégie plus stable reçoit plus de poids
+
+    Paramètre
+    ---------
     results : dict[str, BacktestResult]
 
-    Returns
-    -------
+    Retour
+    ------
     weights : dict[str, float]
-        Normalized inverse-vol weights (sum to 1).
+        poids normalisés (somme = 1)
     vols : dict[str, float]
-        Annualized volatilities used for the weighting.
+        volatilités annualisées de chaque stratégie
     """
     vols = {}
     inv_vol = {}
 
     for name, res in results.items():
-        # Daily strategy returns → annualized volatility
+        # Volatilité annualisée à partir des rendements journaliers
         sigma = float(res.returns.std() * math.sqrt(252.0))
         vols[name] = sigma
 
+        # Si la volatilité est positive, on prend son inverse
         if sigma > 0.0:
             inv_vol[name] = 1.0 / sigma
         else:
             inv_vol[name] = 0.0
 
+    # Normalisation pour que la somme des poids fasse 1
     total = sum(inv_vol.values())
+
     if total == 0.0:
-        # Fallback: equal weights if all vols are zero for some reason
+        # Cas extrême : toutes les volatilités sont nulles
         n = len(inv_vol)
         weights = {k: 1.0 / n for k in inv_vol.keys()}
     else:
@@ -96,24 +121,33 @@ def compute_inverse_vol_weights(results):
     return weights, vols
 
 
+# ============================================================
+# 3) Tracé des courbes d'equity
+# ============================================================
 def plot_multiasset_equity(results, portfolio_res, title_suffix="(inverse-vol weights)"):
     """
-    Plot equity curves for each asset strategy and the risk-parity portfolio.
+    Trace :
+    - les courbes d'equity des stratégies individuelles
+    - la courbe d'equity du portefeuille inverse-vol
     """
     plt.figure(figsize=(12, 6))
 
-    # Individual strategies
+    # --------------------------------------------------------
+    # Stratégies individuelles
+    # --------------------------------------------------------
     for name, res in results.items():
         eq = res.equity / res.equity.iloc[0]
         plt.plot(eq.index, eq, label=name)
 
-    # Portfolio
+    # --------------------------------------------------------
+    # Portefeuille global
+    # --------------------------------------------------------
     port_eq = portfolio_res.equity / portfolio_res.equity.iloc[0]
     plt.plot(port_eq.index, port_eq, label="Portfolio inv-vol", linewidth=2.0)
 
     plt.axhline(1.0, color="black", lw=0.8, ls="--")
-    plt.title(f"Multi-asset SMA 20/100 strategies vs portfolio {title_suffix}")
-    plt.ylabel("Equity (rebased to 1.0)")
+    plt.title(f"Stratégies SMA multi-actifs vs portefeuille {title_suffix}")
+    plt.ylabel("Equity (rebasée à 1.0)")
     plt.grid(alpha=0.3)
     plt.legend()
     plt.tight_layout()
@@ -130,52 +164,73 @@ def plot_multiasset_equity(results, portfolio_res, title_suffix="(inverse-vol we
     plt.show()
 
 
+# ============================================================
+# 4) Affichage des poids et métriques
+# ============================================================
 def print_metrics_table(results, portfolio_res, weights, vols):
     """
-    Print a small summary table for all strategies and the portfolio.
+    Affiche :
+    - les poids du portefeuille inverse-vol
+    - la volatilité de chaque stratégie
+    - les métriques des stratégies individuelles
+    - les métriques du portefeuille
     """
-    print("\n===== Inverse-vol weights (strategy space) =====")
+    print("\n===== Poids inverse-volatilité (espace stratégies) =====")
     for name in results.keys():
         w = weights[name]
         v = vols[name]
         print(f"{name:10s}  weight = {w:6.3f}   vol_ann = {v:6.3f}")
 
-    print("\n===== Strategy metrics =====")
+    print("\n===== Métriques des stratégies =====")
     for name, res in results.items():
         print(f"\n--- {name} ---")
         for k, v in res.metrics.items():
             print(f"{k:25s}: {v:.4f}")
         print(f"{'Final equity':25s}: {res.equity.iloc[-1]:.4f}")
 
-    print("\n===== Portfolio (inverse-vol) =====")
+    print("\n===== Portefeuille inverse-vol =====")
     for k, v in portfolio_res.metrics.items():
         print(f"{k:25s}: {v:.4f}")
     print(f"{'Final equity':25s}: {portfolio_res.equity.iloc[-1]:.4f}")
 
 
-# ---------------------------------------------------------------------
-# Main script
-# ---------------------------------------------------------------------
+# ============================================================
+# 5) Main
+# ============================================================
 def main():
-    # 1) Choose the universe
+    # --------------------------------------------------------
+    # 1) Choix de l'univers d'actifs
+    # --------------------------------------------------------
     symbols = ["MSFT", "BTCUSD", "SP500", "AAPL"]
 
-    # 2) Load multi-asset prices (one column per symbol)
+    # --------------------------------------------------------
+    # 2) Chargement des prix multi-actifs
+    # --------------------------------------------------------
     df_prices = load_multi_assets(symbols)
 
-    # 3) Build SMA strategies and run backtests per asset
+    # --------------------------------------------------------
+    # 3) Construction des stratégies SMA sur chaque actif
+    # --------------------------------------------------------
     results = build_sma_strategies(df_prices)
 
-    # 4) Compute inverse-volatility weights from strategy returns
+    # --------------------------------------------------------
+    # 4) Calcul des poids inverse-volatilité
+    # --------------------------------------------------------
     weights, vols = compute_inverse_vol_weights(results)
 
-    # 5) Combine BacktestResult objects into a risk-parity portfolio
+    # --------------------------------------------------------
+    # 5) Construction du portefeuille global
+    # --------------------------------------------------------
     portfolio_res = combine_backtests(results, weights=weights)
 
-    # 6) Print metrics and weights
+    # --------------------------------------------------------
+    # 6) Affichage des résultats
+    # --------------------------------------------------------
     print_metrics_table(results, portfolio_res, weights, vols)
 
-    # 7) Plot equity curves
+    # --------------------------------------------------------
+    # 7) Tracé des courbes
+    # --------------------------------------------------------
     plot_multiasset_equity(results, portfolio_res)
 
 
