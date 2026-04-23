@@ -1,5 +1,17 @@
 # scripts/run_portfolio_grid.py
-# Grid-search on portfolio weights between SMA and Breakout strategies.
+
+"""
+Recherche sur grille des poids de portefeuille entre deux stratégies :
+
+- SMA 20/100
+- Breakout 50 jours
+
+Objectif :
+- faire varier le poids de la stratégie SMA entre 0% et 100%
+- construire le portefeuille correspondant
+- mesurer ses performances
+- visualiser le compromis rendement / risque
+"""
 
 import os
 import sys
@@ -8,7 +20,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Make project root importable (so "backtesting.*" and "utils.*" work)
+# ------------------------------------------------------------
+# Permet d'importer les modules du projet quand on lance ce script directement
+# ------------------------------------------------------------
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from utils.data_loader import load_prices
@@ -17,10 +31,17 @@ from backtesting.trend_breakout import breakout_positions
 from backtesting.engine import run_backtest, combine_backtests
 
 
+# ============================================================
+# 1) Backtests des stratégies individuelles
+# ============================================================
 def run_individual_strategies(df, cost_bps: float = 1.0):
     """
-    Run the two base strategies (SMA 20/100 and Breakout 50d)
-    and return a dict of BacktestResult objects.
+    Lance les deux stratégies de base :
+    - SMA 20/100
+    - Breakout 50 jours
+
+    Retour :
+    dict contenant les BacktestResult des deux stratégies
     """
     price = df["price"]
 
@@ -33,7 +54,7 @@ def run_individual_strategies(df, cost_bps: float = 1.0):
         initial_capital=1.0,
     )
 
-    # --- Breakout 50d ---
+    # --- Breakout 50 jours ---
     brk_pos = breakout_positions(price, lookback=50)
     brk_res = run_backtest(
         df,
@@ -49,26 +70,28 @@ def run_individual_strategies(df, cost_bps: float = 1.0):
     return results
 
 
+# ============================================================
+# 2) Construction d'une grille de portefeuilles
+# ============================================================
 def portfolio_grid(results, n_steps: int = 11):
     """
-    Build a grid of portfolios between SMA and Breakout.
+    Construit une grille de portefeuilles entre SMA et Breakout.
 
-    Parameters
-    ----------
-    results : dict[str, BacktestResult]
-        Must contain keys "sma_20_100" and "breakout_50".
-    n_steps : int
-        Number of points between 0 and 1 (inclusive) for the SMA weight.
+    Exemple si n_steps = 11 :
+    - 0% SMA / 100% Breakout
+    - 10% SMA / 90% Breakout
+    - ...
+    - 100% SMA / 0% Breakout
 
-    Returns
-    -------
-    pd.DataFrame
-        One row per portfolio with weights and performance metrics.
+    Retour :
+    DataFrame avec poids + métriques de performance
     """
     sma_key = "sma_20_100"
     brk_key = "breakout_50"
 
+    # Poids possibles pour SMA
     weights_sma = np.linspace(0.0, 1.0, n_steps)
+
     rows = []
 
     for w_sma in weights_sma:
@@ -79,11 +102,13 @@ def portfolio_grid(results, n_steps: int = 11):
             brk_key: w_brk,
         }
 
-        # Combine the two BacktestResult objects into a portfolio
+        # Combinaison des deux stratégies dans un portefeuille
         port_res = combine_backtests(results, weights)
 
-        # Copy metrics and augment with weights + final equity
-        m = dict(port_res.metrics)  # shallow copy
+        # On copie les métriques du portefeuille
+        m = dict(port_res.metrics)
+
+        # On ajoute les poids et l'equity finale
         m["w_sma_20_100"] = w_sma
         m["w_breakout_50"] = w_brk
         m["Final equity"] = float(port_res.equity.iloc[-1])
@@ -92,7 +117,7 @@ def portfolio_grid(results, n_steps: int = 11):
 
     df_grid = pd.DataFrame(rows)
 
-    # Order columns a bit more nicely if they exist
+    # Réorganisation des colonnes
     cols = [
         "w_sma_20_100",
         "w_breakout_50",
@@ -104,12 +129,17 @@ def portfolio_grid(results, n_steps: int = 11):
         "Final equity",
     ]
     df_grid = df_grid[[c for c in cols if c in df_grid.columns]]
+
     return df_grid
 
 
+# ============================================================
+# 3) Visualisation rendement / risque
+# ============================================================
 def plot_risk_return(df_grid: pd.DataFrame, out_png: str | None = None):
     """
-    Plot Cumulative Return vs Annualized Volatility for the portfolio grid.
+    Trace le nuage rendement cumulé vs volatilité annualisée
+    pour tous les portefeuilles de la grille.
     """
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -118,10 +148,11 @@ def plot_risk_return(df_grid: pd.DataFrame, out_png: str | None = None):
 
     ax.scatter(x, y, alpha=0.8)
 
-    # Annotate a few key points: pure SMA, 50/50, pure Breakout
+    # Annotation de quelques portefeuilles clés
     for _, row in df_grid.iterrows():
         w = row["w_sma_20_100"]
         label = None
+
         if abs(w - 0.0) < 1e-8:
             label = "0% SMA / 100% Breakout"
         elif abs(w - 0.5) < 1e-8:
@@ -140,8 +171,9 @@ def plot_risk_return(df_grid: pd.DataFrame, out_png: str | None = None):
 
     ax.set_xlabel("Annualized Volatility")
     ax.set_ylabel("Cumulative Return")
-    ax.set_title("Risk/return grid – SMA 20/100 vs Breakout 50d portfolio")
+    ax.set_title("Grille rendement / risque – SMA 20/100 vs Breakout 50d")
     ax.grid(alpha=0.3)
+
     plt.tight_layout()
 
     if out_png is not None:
@@ -152,24 +184,27 @@ def plot_risk_return(df_grid: pd.DataFrame, out_png: str | None = None):
     plt.show()
 
 
+# ============================================================
+# 4) Main
+# ============================================================
 def main():
-    # 1) Load price data
+    # 1) Chargement des données de prix
     df = load_prices()
 
-    # 2) Run base strategies once
+    # 2) Backtests des deux stratégies
     results = run_individual_strategies(df, cost_bps=1.0)
 
-    # 3) Build portfolio grid
+    # 3) Construction de la grille de portefeuilles
     df_grid = portfolio_grid(results, n_steps=11)
 
-    # 4) Save metrics to CSV
+    # 4) Sauvegarde des résultats dans un CSV
     root = os.path.dirname(os.path.dirname(__file__))
     out_csv = os.path.join(root, "data", "portfolio_grid_results.csv")
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     df_grid.to_csv(out_csv, index=False)
     print(f"[OK] Portfolio grid results saved → {out_csv}")
 
-    # 5) Plot risk/return “frontier”
+    # 5) Tracé rendement / risque
     out_png = os.path.join(root, "data", "portfolio_frontier.png")
     plot_risk_return(df_grid, out_png=out_png)
 
