@@ -1,16 +1,21 @@
 # scripts/run_multiasset_minvar.py
-"""
-Multi-asset SMA 20/100 strategies combined in a minimum-variance portfolio.
 
-This script:
-- loads multi-asset prices (MSFT, BTCUSD, SP500, AAPL)
-- builds a SMA 20/100 strategy on each asset
-- runs a backtest per asset (using backtesting.engine.run_backtest)
-- computes the sample covariance matrix of strategy daily returns
-- builds the unconstrained minimum-variance portfolio:
-      w ∝ Σ^{-1} 1
-- compares it to an equal-weight portfolio
-- plots all equity curves and saves the figure to data/multiasset_minvar_equity.png
+"""
+Portefeuille multi-actifs de variance minimale à partir de stratégies SMA 20/100.
+
+Idée :
+- on prend plusieurs actifs
+- on applique une stratégie SMA 20/100 sur chacun
+- on backteste chaque stratégie séparément
+- on récupère les rendements de stratégie
+- on calcule la matrice de covariance de ces rendements
+- on construit le portefeuille de variance minimale :
+      w proportionnel à Sigma inverse fois le vecteur de 1
+
+On compare ensuite :
+- les stratégies individuelles
+- un portefeuille équipondéré
+- un portefeuille de variance minimale
 """
 
 import os
@@ -20,7 +25,9 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Make project root importable (so 'backtesting.*' and 'utils.*' work)
+# ------------------------------------------------------------
+# Permet d'importer les modules du projet quand on lance ce script directement
+# ------------------------------------------------------------
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from utils.data_loader import load_multi_assets
@@ -29,109 +36,138 @@ from backtesting.engine import run_backtest
 from backtesting.portfolio import combine_backtests
 
 
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
+# ============================================================
+# 1) Construire les stratégies SMA sur chaque actif
+# ============================================================
 def build_sma_strategies(df_prices):
     """
-    For each asset in df_prices, build a SMA 20/100 strategy and run a backtest.
+    Pour chaque actif :
+    - construit les positions SMA 20/100
+    - lance le backtest
+    - stocke le résultat
 
-    Parameters
-    ----------
-    df_prices : pd.DataFrame
-        Columns = asset symbols, index = dates, values = prices.
+    Paramètre
+    ---------
+    df_prices : DataFrame
+        colonnes = actifs, valeurs = prix
 
-    Returns
-    -------
+    Retour
+    ------
     dict[str, BacktestResult]
-        One BacktestResult per asset.
     """
     results = {}
 
     for symbol in df_prices.columns:
         price = df_prices[symbol].dropna()
 
-        # Build SMA crossover positions (+1 / 0 / -1)
+        # Signal SMA 20/100
         pos = sma_crossover_positions(price, short=20, long=100)
 
-        # Run backtest on this single asset
+        # Backtest de la stratégie sur cet actif
         res = run_backtest(price, pos, cost_bps=1.0, initial_capital=1.0)
+
         results[symbol] = res
 
     return results
 
 
+# ============================================================
+# 2) Calcul des poids de variance minimale
+# ============================================================
 def compute_minvar_weights(results):
     """
-    Compute minimum-variance portfolio weights from strategy daily returns.
+    Calcule les poids du portefeuille de variance minimale
+    à partir des rendements journaliers des stratégies.
 
-    We use the classical Markowitz closed-form solution (no constraints):
-        w* ∝ Σ^{-1} 1
+    Formule théorique non contrainte :
+        w* proportionnel à Sigma inverse fois 1
 
-    The weights are then normalized to sum to 1. They may be slightly
-    negative (allowing mild short exposures), which is fine for a
-    theoretical min-var portfolio.
+    Les poids sont ensuite normalisés pour sommer à 1.
 
-    Parameters
-    ----------
+    Paramètre
+    ---------
     results : dict[str, BacktestResult]
 
-    Returns
-    -------
+    Retour
+    ------
     weights : dict[str, float]
-        Minimum-variance weights (sum to 1).
-    cov : pd.DataFrame
-        Sample covariance matrix of strategy returns.
+        poids min-var
+    cov : DataFrame
+        matrice de covariance des rendements de stratégie
     """
     import pandas as pd
 
-    # Build a DataFrame of strategy daily returns
+    # --------------------------------------------------------
+    # Construire un DataFrame de rendements de stratégie
+    # chaque colonne = une stratégie / un actif
+    # --------------------------------------------------------
     ret_df = pd.DataFrame(
         {name: res.returns.astype(float) for name, res in results.items()}
     ).dropna(how="all")
 
-    # Sample covariance matrix Σ
+    # --------------------------------------------------------
+    # Matrice de covariance Sigma
+    # --------------------------------------------------------
     cov = ret_df.cov()
 
-    # Vector of ones
+    # Vecteur de 1
     names = list(ret_df.columns)
     ones = np.ones(len(names))
 
-    # Use pseudo-inverse in case Σ is ill-conditioned
+    # --------------------------------------------------------
+    # Inversion pseudo-inverse de Sigma
+    # (plus robuste si la matrice est mal conditionnée)
+    # --------------------------------------------------------
     sigma_inv = np.linalg.pinv(cov.values)
 
-    # Unconstrained min-var weights (not yet normalized)
+    # --------------------------------------------------------
+    # Poids min-var non normalisés
+    # --------------------------------------------------------
     raw_w = sigma_inv @ ones
 
-    # Normalize to sum to 1
+    # --------------------------------------------------------
+    # Normalisation pour que la somme des poids fasse 1
+    # --------------------------------------------------------
     w = raw_w / raw_w.sum()
 
     weights = {name: float(w[i]) for i, name in enumerate(names)}
     return weights, cov
 
 
+# ============================================================
+# 3) Tracé des courbes d'equity
+# ============================================================
 def plot_multiasset_minvar(results, ew_res, minvar_res):
     """
-    Plot equity curves for each asset strategy + EW portfolio + min-var portfolio.
+    Trace :
+    - les stratégies individuelles
+    - le portefeuille équipondéré
+    - le portefeuille de variance minimale
     """
     plt.figure(figsize=(12, 6))
 
-    # Individual strategies
+    # --------------------------------------------------------
+    # Stratégies individuelles
+    # --------------------------------------------------------
     for name, res in results.items():
         eq = res.equity / res.equity.iloc[0]
         plt.plot(eq.index, eq, label=name)
 
-    # Equal-weight portfolio
+    # --------------------------------------------------------
+    # Portefeuille équipondéré
+    # --------------------------------------------------------
     ew_eq = ew_res.equity / ew_res.equity.iloc[0]
     plt.plot(ew_eq.index, ew_eq, label="Portfolio EW", linewidth=2.0, ls="--")
 
-    # Min-variance portfolio
+    # --------------------------------------------------------
+    # Portefeuille de variance minimale
+    # --------------------------------------------------------
     mv_eq = minvar_res.equity / minvar_res.equity.iloc[0]
     plt.plot(mv_eq.index, mv_eq, label="Portfolio min-var", linewidth=2.0)
 
     plt.axhline(1.0, color="black", lw=0.8, ls="--")
-    plt.title("Multi-asset SMA 20/100 strategies vs portfolios (EW vs min-var)")
-    plt.ylabel("Equity (rebased to 1.0)")
+    plt.title("Stratégies SMA multi-actifs vs portefeuilles (EW vs min-var)")
+    plt.ylabel("Equity (rebasée à 1.0)")
     plt.grid(alpha=0.3)
     plt.legend()
     plt.tight_layout()
@@ -148,22 +184,31 @@ def plot_multiasset_minvar(results, ew_res, minvar_res):
     plt.show()
 
 
+# ============================================================
+# 4) Affichage des poids, métriques et covariance
+# ============================================================
 def print_weights_and_metrics(results, ew_res, minvar_res, minvar_w, cov):
     """
-    Print summary of weights and basic metrics.
+    Affiche :
+    - les poids du portefeuille min-var
+    - les métriques du portefeuille EW et min-var
+    - la matrice de covariance
     """
     import pandas as pd
 
-    print("\n===== Minimum-variance weights (strategy space) =====")
+    print("\n===== Poids du portefeuille de variance minimale =====")
     for name, w in minvar_w.items():
         print(f"{name:10s}  w_minvar = {w:7.3f}")
 
-    # Annualized vol for portfolios
+    # --------------------------------------------------------
+    # Fonction utilitaire : volatilité annualisée
+    # --------------------------------------------------------
     def ann_vol(res):
         return float(res.returns.std() * math.sqrt(252.0))
 
-    print("\n===== Portfolio comparison =====")
+    print("\n===== Comparaison des portefeuilles =====")
     print(f"{'Portfolio':20s} {'CumReturn':>10s} {'AnnVol':>10s} {'Sharpe?':>10s}")
+
     for label, res in [
         ("Equal-weight", ew_res),
         ("Min-variance", minvar_res),
@@ -171,45 +216,61 @@ def print_weights_and_metrics(results, ew_res, minvar_res, minvar_w, cov):
         eq = res.equity
         cum_ret = float(eq.iloc[-1] / eq.iloc[0] - 1.0)
         vol = ann_vol(res)
-        # Sharpe stored in metrics under 'Sharpe Ratio'
         sharpe = res.metrics.get("Sharpe Ratio", float("nan"))
+
         print(f"{label:20s} {cum_ret:10.4f} {vol:10.4f} {sharpe:10.4f}")
 
-    print("\n===== Covariance matrix of strategy returns =====")
-    # Nice compact print
+    print("\n===== Matrice de covariance des rendements de stratégie =====")
     cov_round = cov.round(4)
+
     with pd.option_context("display.width", 120, "display.max_columns", None):
         print(cov_round)
 
 
-# ---------------------------------------------------------------------
-# Main script
-# ---------------------------------------------------------------------
+# ============================================================
+# 5) Main
+# ============================================================
 def main():
-    # 1) Choose the universe
+    # --------------------------------------------------------
+    # 1) Univers d'actifs
+    # --------------------------------------------------------
     symbols = ["MSFT", "BTCUSD", "SP500", "AAPL"]
 
-    # 2) Load multi-asset prices (one column per symbol)
+    # --------------------------------------------------------
+    # 2) Chargement des prix multi-actifs
+    # --------------------------------------------------------
     df_prices = load_multi_assets(symbols)
 
-    # 3) Build SMA strategies and run backtests per asset
+    # --------------------------------------------------------
+    # 3) Construction des stratégies SMA sur chaque actif
+    # --------------------------------------------------------
     results = build_sma_strategies(df_prices)
 
-    # 4) Build an equal-weight portfolio as a baseline
+    # --------------------------------------------------------
+    # 4) Portefeuille équipondéré comme baseline
+    # --------------------------------------------------------
     n = len(results)
     ew_weights = {name: 1.0 / n for name in results.keys()}
     ew_res = combine_backtests(results, weights=ew_weights)
 
-    # 5) Compute minimum-variance weights from strategy returns
+    # --------------------------------------------------------
+    # 5) Calcul des poids min-var
+    # --------------------------------------------------------
     minvar_w, cov = compute_minvar_weights(results)
 
-    # 6) Combine BacktestResult objects into a min-var portfolio
+    # --------------------------------------------------------
+    # 6) Construction du portefeuille min-var
+    # --------------------------------------------------------
     minvar_res = combine_backtests(results, weights=minvar_w)
 
-    # 7) Print weights + metrics
+    # --------------------------------------------------------
+    # 7) Affichage des résultats
+    # --------------------------------------------------------
     print_weights_and_metrics(results, ew_res, minvar_res, minvar_w, cov)
 
-    # 8) Plot equity curves
+    # --------------------------------------------------------
+    # 8) Tracé des courbes
+    # --------------------------------------------------------
     plot_multiasset_minvar(results, ew_res, minvar_res)
 
 
