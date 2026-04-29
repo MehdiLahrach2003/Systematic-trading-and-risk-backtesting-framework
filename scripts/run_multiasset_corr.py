@@ -1,23 +1,22 @@
 # scripts/run_multiasset_corr.py
-"""
-Multi-asset correlation analysis for:
-- raw asset returns
-- SMA 20/100 strategy returns on each asset.
-
-Outputs:
-- Two correlation heatmaps saved to /data:
-    * multiasset_price_corr.png
-    * multiasset_strategy_corr.png
-"""
+# ------------------------------------------------------------
+# Ce script compare :
+# - la corrélation entre les rendements bruts des actifs
+# - la corrélation entre les rendements des stratégies SMA 20/100
+#
+# Objectif :
+# voir si la transformation "actif -> stratégie"
+# modifie la structure de corrélation,
+# ce qui est crucial pour la diversification.
+# ------------------------------------------------------------
 
 import os
 import sys
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Make project root importable (so 'backtesting.*' and 'utils.*' work)
+# Permet d'importer les modules du projet
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from utils.data_loader import load_multi_assets
@@ -25,84 +24,64 @@ from backtesting.ma_crossover import sma_crossover_positions
 from backtesting.engine import run_backtest
 
 
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
+# ------------------------------------------------------------
+# 1) Rendements logarithmiques des actifs
+# ------------------------------------------------------------
 def compute_asset_returns(df_prices: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute daily log returns for each asset.
-
-    Parameters
-    ----------
-    df_prices : pd.DataFrame
-        Columns = asset symbols, index = dates, values = prices.
-
-    Returns
-    -------
-    pd.DataFrame
-        Daily log returns for each asset (aligned index).
+    Calcule les rendements logarithmiques journaliers
+    de chaque actif.
     """
     log_px = np.log(df_prices)
-    returns = log_px.diff().dropna()
+    returns = log_px.diff().dropna() # type: ignore
     return returns
 
 
+# ------------------------------------------------------------
+# 2) Rendements des stratégies SMA sur chaque actif
+# ------------------------------------------------------------
 def compute_sma_strategy_returns(df_prices: pd.DataFrame) -> pd.DataFrame:
     """
-    For each asset, build a SMA 20/100 strategy, run a backtest,
-    and collect the daily strategy returns in a single DataFrame.
-
-    Parameters
-    ----------
-    df_prices : pd.DataFrame
-        Columns = asset symbols, index = dates, values = prices.
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns = asset symbols, values = SMA strategy daily returns.
+    Pour chaque actif :
+    - construit une stratégie SMA 20/100
+    - lance le backtest
+    - récupère les rendements journaliers de stratégie
     """
     strat_returns = {}
 
     for symbol in df_prices.columns:
         price = df_prices[symbol].dropna()
 
-        # SMA crossover positions (+1 / 0 / -1)
+        # Signal SMA
         pos = sma_crossover_positions(price, short=20, long=100)
 
-        # Run backtest for this asset/strategy
+        # Backtest
         res = run_backtest(price, pos, cost_bps=1.0, initial_capital=1.0)
 
-        # Store net daily returns
+        # Rendements nets de stratégie
         strat_returns[symbol] = res.returns
 
-    # Align on common date index
+    # Alignement sur un index commun
     strat_ret_df = pd.concat(strat_returns, axis=1).dropna()
-    strat_ret_df.columns = df_prices.columns  # ensure same order
+    strat_ret_df.columns = df_prices.columns
     return strat_ret_df
 
 
+# ------------------------------------------------------------
+# 3) Heatmap de corrélation
+# ------------------------------------------------------------
 def plot_corr_heatmap(corr_df: pd.DataFrame, title: str, out_name: str) -> None:
     """
-    Plot and save a correlation heatmap from a correlation matrix.
-
-    Parameters
-    ----------
-    corr_df : pd.DataFrame
-        Correlation matrix.
-    title : str
-        Title of the figure.
-    out_name : str
-        File name (inside /data) for the PNG output.
+    Trace et sauvegarde une heatmap de corrélation.
     """
     plt.figure(figsize=(6, 5))
     im = plt.imshow(corr_df.values, vmin=-1.0, vmax=1.0, cmap="coolwarm")
 
     plt.title(title)
-    plt.xticks(range(len(corr_df.columns)), corr_df.columns, rotation=45, ha="right")
-    plt.yticks(range(len(corr_df.index)), corr_df.index)
+    plt.xticks(range(len(corr_df.columns)), corr_df.columns, rotation=45, ha="right") # type: ignore
+    plt.yticks(range(len(corr_df.index)), corr_df.index) # type: ignore
 
-    # Add correlation values in each cell
+    # Valeurs numériques dans chaque case
     for i in range(len(corr_df.index)):
         for j in range(len(corr_df.columns)):
             val = corr_df.iloc[i, j]
@@ -112,7 +91,7 @@ def plot_corr_heatmap(corr_df: pd.DataFrame, title: str, out_name: str) -> None:
                 f"{val:.2f}",
                 ha="center",
                 va="center",
-                color="black" if abs(val) < 0.7 else "white",
+                color="black" if abs(val) < 0.7 else "white", # type: ignore
                 fontsize=9,
             )
 
@@ -120,7 +99,9 @@ def plot_corr_heatmap(corr_df: pd.DataFrame, title: str, out_name: str) -> None:
     plt.tight_layout()
 
     out_png = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "data", out_name
+        os.path.dirname(os.path.dirname(__file__)),
+        "data",
+        out_name
     )
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     plt.savefig(out_png, dpi=150)
@@ -129,20 +110,18 @@ def plot_corr_heatmap(corr_df: pd.DataFrame, title: str, out_name: str) -> None:
     plt.show()
 
 
-# ---------------------------------------------------------------------
-# Main script
-# ---------------------------------------------------------------------
+# ------------------------------------------------------------
+# 4) Script principal
+# ------------------------------------------------------------
 def main():
-    # 1) Universe of assets
+    # Univers d'actifs
     symbols = ["MSFT", "BTCUSD", "SP500", "AAPL"]
 
-    # 2) Load multi-asset prices (one column per symbol)
+    # Chargement des prix multi-actifs
     df_prices = load_multi_assets(symbols)
-
-    # Ensure no silly columns
     df_prices = df_prices[symbols].dropna(how="all")
 
-    # 3) Raw asset log-returns
+    # Corrélation des rendements bruts
     asset_rets = compute_asset_returns(df_prices)
     asset_corr = asset_rets.corr()
 
@@ -155,7 +134,7 @@ def main():
         out_name="multiasset_price_corr.png",
     )
 
-    # 4) SMA 20/100 strategy returns per asset
+    # Corrélation des rendements de stratégies SMA
     strat_rets = compute_sma_strategy_returns(df_prices)
     strat_corr = strat_rets.corr()
 
