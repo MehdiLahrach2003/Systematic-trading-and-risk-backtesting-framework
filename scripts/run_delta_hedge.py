@@ -1,23 +1,31 @@
 # scripts/run_delta_hedge.py
-# Simple delta-hedging simulation for a European call under Black–Scholes.
+# ------------------------------------------------------------
+# Ce script simule une couverture en delta d'un call européen
+# sur une seule trajectoire de marché.
+#
+# Objectif :
+# visualiser comment évoluent :
+# - le spot
+# - la valeur du call
+# - la valeur du portefeuille de couverture
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
 import os
 import sys
-
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Make project root importable (so "pricing.*" works)
+# Permet d'importer les modules du projet
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from pricing.black_scholes import bs_call_price, bs_call_delta
 
 
-# --------------------------------------------------------------------
-# 1) GBM price simulation
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
+# 1) Simulation d'une trajectoire GBM
+# ------------------------------------------------------------
 def simulate_gbm_path(
     S0: float,
     r: float,
@@ -27,31 +35,11 @@ def simulate_gbm_path(
     seed: int | None = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Simulate a single geometric Brownian motion (GBM) path.
+    Simule une seule trajectoire de GBM.
 
-    dS_t = r S_t dt + sigma S_t dW_t
-
-    Parameters
-    ----------
-    S0 : float
-        Initial spot.
-    r : float
-        Risk-free rate (drift under risk-neutral).
-    sigma : float
-        Volatility.
-    T : float
-        Total time in years.
-    n_steps : int
-        Number of time steps.
-    seed : int or None
-        Random seed (for reproducibility).
-
-    Returns
-    -------
-    t : np.ndarray
-        Time grid from 0 to T (length n_steps + 1).
-    S : np.ndarray
-        Simulated spot path (same length as t).
+    Retour :
+    - t : grille de temps
+    - S : trajectoire du spot
     """
     if seed is not None:
         rng = np.random.default_rng(seed)
@@ -60,20 +48,24 @@ def simulate_gbm_path(
 
     dt = T / n_steps
     t = np.linspace(0.0, T, n_steps + 1)
+
     S = np.empty(n_steps + 1, dtype=float)
     S[0] = S0
 
     for i in range(1, n_steps + 1):
         z = rng.standard_normal()
-        # Exact GBM step (log-normal)
-        S[i] = S[i - 1] * np.exp((r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z)
+
+        # Pas exact du GBM
+        S[i] = S[i - 1] * np.exp(
+            (r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z
+        )
 
     return t, S
 
 
-# --------------------------------------------------------------------
-# 2) Delta-hedging simulation
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
+# 2) Couverture en delta sur une trajectoire
+# ------------------------------------------------------------
 def delta_hedge_path(
     S: np.ndarray,
     t: np.ndarray,
@@ -83,32 +75,15 @@ def delta_hedge_path(
     T: float,
 ) -> dict:
     """
-    Simulate the P&L of a delta hedge for a short European call.
+    Simule le PnL d'une couverture en delta d'un call européen vendu.
 
-    Setup:
-    - At t=0, we SELL 1 call at BS price C0 (short option).
-    - We receive premium C0 and keep it as cash.
-    - At each time step, we adjust our stock position to match Delta.
-      (we ignore interest on cash for simplicity)
-
-    At maturity:
-    - Our portfolio value = cash + stock_position * S_T
-    - We must pay the payoff of the short call: max(S_T - K, 0)
-    - Hedging error = portfolio_value - payoff
-
-    Returns
-    -------
-    dict containing:
-        "option_values"   : np.ndarray of call prices along the path
-        "deltas"          : np.ndarray of deltas
-        "cash"            : np.ndarray of cash account
-        "stock_pos"       : np.ndarray of stock positions
-        "portfolio_value" : np.ndarray of replication portfolio value
-        "payoff"          : float (option payoff at maturity)
-        "hedge_error"     : float (final hedging error)
+    Hypothèse :
+    - on vend 1 call au temps 0
+    - on reçoit la prime
+    - on couvre le risque avec le delta BS
+    - on ignore les intérêts sur le cash pour simplifier
     """
     n_steps = len(S) - 1
-    dt = T / n_steps
 
     option_values = np.zeros_like(S)
     deltas = np.zeros_like(S)
@@ -116,47 +91,61 @@ def delta_hedge_path(
     stock_pos = np.zeros_like(S)
     portfolio_value = np.zeros_like(S)
 
-    # --- t = 0 : short 1 call, receive premium, no stock yet ---
+    # ------------------------------------------------------------
+    # t = 0 : on vend le call
+    # ------------------------------------------------------------
     tau0 = T - t[0]
+
+    # Prix initial du call
     C0 = bs_call_price(S[0], K, r, sigma, tau0)
     option_values[0] = C0
 
-    # We are short the call: receive C0 as cash
+    # On reçoit la prime en cash
     cash[0] = C0
     stock_pos[0] = 0.0
 
-    # First delta hedge: buy Delta shares to hedge the short call
+    # Delta initial du call
     deltas[0] = bs_call_delta(S[0], K, r, sigma, tau0)
+
+    # On achète Delta actions pour couvrir le call vendu
     trade = deltas[0] - stock_pos[0]
     cash[0] -= trade * S[0]
     stock_pos[0] = deltas[0]
 
-    # Portfolio value (replicating portfolio)
+    # Valeur du portefeuille
     portfolio_value[0] = cash[0] + stock_pos[0] * S[0]
 
-    # --- Iterate over time steps ---
+    # ------------------------------------------------------------
+    # Rééquilibrage au cours du temps
+    # ------------------------------------------------------------
     for i in range(1, n_steps + 1):
         tau = max(T - t[i], 0.0)
 
         if tau > 0.0:
-            # Call value and delta before maturity
+            # Avant maturité : prix et delta BS
             option_values[i] = bs_call_price(S[i], K, r, sigma, tau)
             deltas[i] = bs_call_delta(S[i], K, r, sigma, tau)
         else:
-            # At maturity: option value = payoff
+            # À maturité : valeur du call = payoff
             option_values[i] = max(S[i] - K, 0.0)
-            deltas[i] = 0.0  # after maturity there is no delta
+            deltas[i] = 0.0
 
-        # Rebalance hedge (we ignore interest on cash for simplicity)
+        # Ajustement de la position en actions
         trade = deltas[i] - stock_pos[i - 1]
+
+        # Mise à jour du cash (sans intérêts)
         cash[i] = cash[i - 1] - trade * S[i]
+
+        # Nouvelle position en actions
         stock_pos[i] = stock_pos[i - 1] + trade
 
-        # Portfolio value = cash + stock position
+        # Valeur du portefeuille
         portfolio_value[i] = cash[i] + stock_pos[i] * S[i]
 
-    # --- Final payoff and hedging error ---
-    payoff = max(S[-1] - K, 0.0)         # we are short the call
+    # ------------------------------------------------------------
+    # Fin : comparaison avec le payoff
+    # ------------------------------------------------------------
+    payoff = max(S[-1] - K, 0.0)
     hedge_error = portfolio_value[-1] - payoff
 
     return {
@@ -170,11 +159,11 @@ def delta_hedge_path(
     }
 
 
-# --------------------------------------------------------------------
-# 3) Main + plotting
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
+# 3) Script principal
+# ------------------------------------------------------------
 def main():
-    # Model and option parameters
+    # Paramètres du modèle
     S0 = 100.0
     K = 100.0
     r = 0.01
@@ -182,10 +171,10 @@ def main():
     T = 1.0
     n_steps = 100
 
-    # 1) Simulate one GBM path
+    # 1) Simulation d'une trajectoire GBM
     t, S = simulate_gbm_path(S0, r, sigma, T, n_steps, seed=42)
 
-    # 2) Run delta hedge on this path
+    # 2) Couverture en delta
     res = delta_hedge_path(S, t, K, r, sigma, T)
 
     option_values = res["option_values"]
@@ -199,7 +188,9 @@ def main():
     print(f"Final portfolio     : {portfolio_value[-1]:.4f}")
     print(f"Hedging error       : {hedge_error:.4f}")
 
-    # 3) Plot S, option price, and hedging portfolio
+    # ------------------------------------------------------------
+    # 3) Tracé des résultats
+    # ------------------------------------------------------------
     fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
 
     # Spot
@@ -211,14 +202,14 @@ def main():
     ax.legend()
     ax.grid(alpha=0.3)
 
-    # Option value
+    # Valeur du call
     ax = axes[1]
     ax.plot(t, option_values, label="Call value")
     ax.set_ylabel("Option price")
     ax.legend()
     ax.grid(alpha=0.3)
 
-    # Portfolio vs payoff
+    # Portefeuille de couverture
     ax = axes[2]
     ax.plot(t, portfolio_value, label="Hedging portfolio value")
     ax.axhline(payoff, color="red", ls="--", lw=1.2, label="Call payoff at T")
@@ -229,8 +220,11 @@ def main():
 
     plt.tight_layout()
 
-    # Save plot to data/
-    out_png = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "delta_hedge_single_path.png")
+    out_png = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data",
+        "delta_hedge_single_path.png"
+    )
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     plt.savefig(out_png, dpi=150)
     print(f"[OK] Delta-hedge plot saved → {out_png}")
