@@ -1,9 +1,14 @@
 # scripts/make_report.py
+
 """
-Run an SMA(20/100) backtest and generate a simple performance report:
-- Print summary metrics from BacktestResult.metrics
-- Plot a tear sheet (equity vs buy & hold, rolling Sharpe, drawdown)
-- Save the tear sheet as PNG in data/tear_sheet.png
+Ce script lance un backtest SMA 20/100 et génère un mini rapport de performance.
+
+Le rapport contient :
+- les métriques principales
+- un tear sheet :
+    * equity curve vs buy & hold
+    * rolling Sharpe
+    * drawdown
 """
 
 import os
@@ -13,7 +18,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# --- Make the project root importable (quant-journey) ---
+# ------------------------------------------------------------
+# Permet d'importer les modules du projet quand on lance ce script directement
+# ------------------------------------------------------------
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from utils.data_loader import load_prices
@@ -21,14 +28,19 @@ from backtesting.ma_crossover import sma_crossover_positions
 from backtesting.engine import run_backtest
 
 
-# ---------------------------------------------------------------------
-# Helper functions for risk / performance
-# ---------------------------------------------------------------------
+# ============================================================
+# 1) Calcul du drawdown
+# ============================================================
 def compute_drawdown(equity: pd.Series) -> pd.Series:
     """
-    Compute drawdown series from an equity curve.
+    Calcule la série de drawdown à partir d'une courbe d'equity.
 
-    Drawdown_t = equity_t / max_{s <= t}(equity_s) - 1
+    Formule :
+        drawdown_t = equity_t / max_{s <= t}(equity_s) - 1
+
+    Donc :
+    - 0 = nouveau plus haut
+    - négatif = on est sous le plus haut historique
     """
     eq = equity.astype(float)
     running_max = eq.cummax()
@@ -37,24 +49,35 @@ def compute_drawdown(equity: pd.Series) -> pd.Series:
     return dd
 
 
+# ============================================================
+# 2) Rolling Sharpe
+# ============================================================
 def rolling_sharpe(returns: pd.Series, window: int = 126, ann_factor: int = 252) -> pd.Series:
     """
-    Compute rolling Sharpe ratio on a rolling window.
+    Calcule le Sharpe ratio glissant sur une fenêtre mobile.
 
-    We assume daily simple returns and use:
-        Sharpe = mean(ret) / std(ret) * sqrt(ann_factor)
+    Hypothèse :
+    - rendements journaliers
+    - Sharpe = moyenne / écart-type * racine(252)
     """
     r = returns.astype(float)
+
+    # Moyenne glissante
     roll_mean = r.rolling(window).mean()
+
+    # Écart-type glissant
     roll_std = r.rolling(window).std(ddof=1)
+
+    # Sharpe glissant
     sharpe = roll_mean / roll_std * np.sqrt(ann_factor)
     sharpe.name = f"rolling_sharpe_{window}"
+
     return sharpe
 
 
-# ---------------------------------------------------------------------
-# Tear sheet plotting
-# ---------------------------------------------------------------------
+# ============================================================
+# 3) Construction du tear sheet
+# ============================================================
 def plot_tear_sheet(
     price: pd.Series,
     equity: pd.Series,
@@ -62,23 +85,33 @@ def plot_tear_sheet(
     out_png: str | None = None,
 ) -> None:
     """
-    Plot a simple tear sheet with:
-    - Strategy equity vs buy & hold (both rebased to 1.0)
-    - Rolling Sharpe (126 days)
-    - Drawdown
+    Trace un tear sheet avec :
+    - equity de la stratégie vs buy and hold
+    - rolling Sharpe
+    - drawdown
     """
-    # Rebase strategy equity to 1.0
+
+    # --------------------------------------------------------
+    # Equity de la stratégie rebasée à 1
+    # --------------------------------------------------------
     eq = equity.astype(float)
     eq_rebased = eq / eq.iloc[0]
 
-    # Buy & hold benchmark (also rebased)
+    # --------------------------------------------------------
+    # Benchmark buy and hold rebasé à 1
+    # --------------------------------------------------------
     bh = price.astype(float) / price.iloc[0]
     bh.name = "buy_and_hold"
 
-    # Drawdown and rolling Sharpe
+    # --------------------------------------------------------
+    # Mesures de risque / performance
+    # --------------------------------------------------------
     dd = compute_drawdown(eq)
     roll_sh = rolling_sharpe(strategy_returns, window=126)
 
+    # --------------------------------------------------------
+    # Figure en 3 panneaux
+    # --------------------------------------------------------
     fig, (ax1, ax2, ax3) = plt.subplots(
         3,
         1,
@@ -87,22 +120,22 @@ def plot_tear_sheet(
         gridspec_kw={"height_ratios": [2, 1, 1]},
     )
 
-    # 1) Equity vs benchmark
+    # ===== 1) Equity vs benchmark =====
     ax1.plot(eq_rebased.index, eq_rebased, label="Strategy", lw=1.5)
     ax1.plot(bh.index, bh, label="Buy & Hold", lw=1.2)
-    ax1.set_ylabel("Index (× start)")
-    ax1.set_title("Equity (rebased) vs Benchmark")
+    ax1.set_ylabel("Index (× départ)")
+    ax1.set_title("Equity (rebasée) vs Benchmark")
     ax1.legend()
     ax1.grid(alpha=0.3)
 
-    # 2) Rolling Sharpe
+    # ===== 2) Rolling Sharpe =====
     ax2.plot(roll_sh.index, roll_sh, lw=1.2)
     ax2.axhline(0.0, color="black", lw=0.8)
     ax2.set_ylabel("Sharpe")
-    ax2.set_title("Rolling Sharpe (126d)")
+    ax2.set_title("Rolling Sharpe (126 jours)")
     ax2.grid(alpha=0.3)
 
-    # 3) Drawdown
+    # ===== 3) Drawdown =====
     ax3.fill_between(dd.index, dd, 0.0, color="steelblue", alpha=0.4)
     ax3.set_ylabel("Drawdown")
     ax3.set_title("Drawdown")
@@ -110,6 +143,7 @@ def plot_tear_sheet(
 
     plt.tight_layout()
 
+    # Sauvegarde éventuelle
     if out_png is not None:
         os.makedirs(os.path.dirname(out_png), exist_ok=True)
         plt.savefig(out_png, dpi=150)
@@ -118,34 +152,49 @@ def plot_tear_sheet(
     plt.show()
 
 
-# ---------------------------------------------------------------------
-# Main script
-# ---------------------------------------------------------------------
+# ============================================================
+# 4) Main
+# ============================================================
 def main():
-    # 1) Load prices (CSV or synthetic if file is missing)
+    # --------------------------------------------------------
+    # 1) Chargement des prix
+    # --------------------------------------------------------
     df = load_prices()
     price = df["price"]
 
-    # 2) Build SMA crossover positions (+1 / 0 / -1)
+    # --------------------------------------------------------
+    # 2) Construction de la stratégie SMA 20/100
+    # --------------------------------------------------------
     positions = sma_crossover_positions(price, short=20, long=100)
 
-    # 3) Run backtest with your engine (note: cost_bps, not trans_cost_bps)
+    # --------------------------------------------------------
+    # 3) Backtest
+    # --------------------------------------------------------
     result = run_backtest(
-        df,                # can pass the full DataFrame (engine will use "price")
+        df,
         positions,
         cost_bps=1.0,
         initial_capital=1.0,
     )
 
-    # 4) Print summary metrics
+    # --------------------------------------------------------
+    # 4) Affichage des métriques principales
+    # --------------------------------------------------------
     print("\n===== Summary metrics =====")
     for k, v in result.metrics.items():
         print(f"{k:25s}: {v: .4f}")
 
     print(f"{'Final equity':25s}: {result.equity.iloc[-1]: .4f}")
 
-    # 5) Plot tear sheet and save to PNG
-    out_png = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tear_sheet.png")
+    # --------------------------------------------------------
+    # 5) Génération du tear sheet
+    # --------------------------------------------------------
+    out_png = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data",
+        "tear_sheet.png"
+    )
+
     plot_tear_sheet(
         price=price,
         equity=result.equity,
