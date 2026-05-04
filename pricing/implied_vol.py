@@ -1,22 +1,29 @@
 # pricing/implied_vol.py
-# Numerical implied volatility solver for Black–Scholes calls (Brent method)
+# ------------------------------------------------------------
+# Ce fichier permet de calculer la volatilité implicite
+# d'un call européen dans le modèle de Black-Scholes.
+#
+# Idée :
+# on observe le prix de marché d'une option,
+# puis on cherche quelle volatilité sigma il faut mettre
+# dans Black-Scholes pour retrouver ce prix.
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
 import os
 import sys
 import numpy as np
-from math import sqrt
 
-# Make project importable when running this file directly
+# Permet d'importer le projet quand on lance ce fichier directement
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-# ABSOLUTE IMPORT — no relative import here
+# Import du pricing Black-Scholes du call
 from pricing.black_scholes import bs_call_price
 
 
 # --------------------------------------------------------------
-# Implied volatility via Brent root finding
+# Volatilité implicite par recherche de racine
 # --------------------------------------------------------------
 def implied_vol_bs(
     price: float,
@@ -28,84 +35,94 @@ def implied_vol_bs(
     max_iter: int = 100,
 ) -> float:
     """
-    Find the Black–Scholes implied volatility using Brent's method.
+    Calcule la volatilité implicite d'un call Black-Scholes.
 
-    Parameters
+    Paramètres
     ----------
     price : float
-        Observed market call price.
+        Prix observé de l'option sur le marché.
     S : float
-        Spot price.
+        Prix spot du sous-jacent.
     K : float
-        Strike price.
+        Strike.
     r : float
-        Continuous interest rate.
+        Taux sans risque.
     T : float
-        Time to maturity in years.
+        Maturité en années.
     tol : float
-        Numerical tolerance for convergence.
+        Tolérance numérique.
     max_iter : int
-        Maximum number of iterations.
+        Nombre maximal d'itérations.
 
-    Returns
-    -------
+    Retour
+    ------
     float
-        Implied volatility (annualized).
+        Volatilité implicite annualisée.
     """
 
-    # Objective function: BS(sigma) - price
+    # Fonction objectif :
+    # on veut trouver sigma tel que :
+    # prix_BS(sigma) - prix_marché = 0
     def f(sig):
         return bs_call_price(S, K, r, sig, T) - price
 
-    # Bounds for volatility search
-    a, b = 1e-6, 5.0  # 500% volatility max allowed
+    # Bornes de recherche pour sigma
+    a, b = 1e-6, 5.0
 
     fa, fb = f(a), f(b)
 
-    # If price is outside BS range, return NaN
+    # Si le prix de marché est hors de la plage possible du modèle,
+    # on ne peut pas trouver de volatilité implicite
     if fa * fb > 0:
         return np.nan
 
-    # Brent’s method loop
+    # Boucle de recherche de racine
     for _ in range(max_iter):
+        # Milieu de l'intervalle
         m = 0.5 * (a + b)
         fm = f(m)
 
+        # Si on est suffisamment proche de 0, on s'arrête
         if abs(fm) < tol:
             return m
 
+        # On garde le côté où le signe change
         if fa * fm < 0:
             b, fb = m, fm
         else:
             a, fa = m, fm
 
-    # Did not converge
+    # Si pas de convergence
     return np.nan
 
 
 # --------------------------------------------------------------
-# TEST (only executed if run directly)
+# Petit test si on exécute le fichier directement
 # --------------------------------------------------------------
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
+    # Paramètres
     S0 = 100
     K = 100
     r = 0.00
     T = 1.0
     true_sigma = 0.20
 
+    # On calcule un prix de call avec Black-Scholes
     price = bs_call_price(S0, K, r, true_sigma, T)
-    iv = implied_vol_bs(price, S0, K, r, T)
+
+    # Puis on essaie de retrouver sigma à partir de ce prix
+    iv = implied_vol_bs(price, S0, K, r, T) # type: ignore
 
     print("True σ:", true_sigma)
     print("Implied σ:", iv)
 
-    # Simple test plot
-    plt.figure(figsize=(5,4))
-    plt.title("Implied volatility test")
-    plt.axhline(true_sigma, color="orange", label="true σ")
-    plt.scatter([0],[iv], color="blue", label="implied σ")
+    # Petit graphe de vérification
+    plt.figure(figsize=(5, 4))
+    plt.title("Test de volatilité implicite")
+    plt.axhline(true_sigma, color="orange", label="σ vraie")
+    plt.scatter([0], [iv], color="blue", label="σ implicite")
     plt.legend()
     plt.tight_layout()
     plt.show()
