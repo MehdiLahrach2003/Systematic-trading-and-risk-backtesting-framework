@@ -1,15 +1,15 @@
 # pricing/delta_hedge_mc.py
-"""
-Monte Carlo study of Black–Scholes delta-hedging error.
-
-- Simulate many GBM paths for the underlying.
-- Delta-hedge a European call on each path with discrete rebalancing.
-- Collect the hedging error (replicating portfolio - payoff at T).
-- Plot the distribution of hedging PnL.
-
-You can run this file directly from VS Code (Run button) or:
-    python pricing/delta_hedge_mc.py
-"""
+# ------------------------------------------------------------
+# Ce fichier étudie l'erreur de couverture en delta
+# d'un call européen dans le modèle de Black-Scholes.
+#
+# Idée :
+# - on simule des trajectoires GBM du sous-jacent
+# - sur chaque trajectoire, on couvre dynamiquement le call
+#   avec son delta
+# - à la fin, on compare la valeur du portefeuille
+#   de réplication au payoff réel de l'option
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -19,19 +19,16 @@ from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-# ----------------------------------------------------------------------
-# Import Black–Scholes call price + delta
-# ----------------------------------------------------------------------
+# Import du prix du call et du delta Black-Scholes
 try:
-    # When pricing is used as a package (from scripts/)
     from .black_scholes import bs_call_price, bs_call_delta
-except ImportError:  # When you run this file directly from VS Code
+except ImportError:
     from black_scholes import bs_call_price, bs_call_delta  # type: ignore
 
 
-# ----------------------------------------------------------------------
-# Core simulation: one delta-hedged path
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
+# 1) Une seule trajectoire + couverture en delta
+# ------------------------------------------------------------
 def simulate_delta_hedge_path(
     S0: float,
     K: float,
@@ -42,41 +39,24 @@ def simulate_delta_hedge_path(
     rng: np.random.Generator,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """
-    Simulate one GBM path and delta-hedge a call option along the way.
+    Simule une trajectoire GBM et applique une couverture en delta
+    d'un call européen tout au long de la trajectoire.
 
-    Parameters
-    ----------
-    S0 : float
-        Initial spot price.
-    K : float
-        Strike of the call.
-    r : float
-        Risk-free rate (continuously compounded).
-    sigma : float
-        Volatility of the underlying.
-    T : float
-        Maturity in years.
-    n_steps : int
-        Number of rebalancing dates (time grid of size n_steps+1).
-    rng : np.random.Generator
-        NumPy random number generator.
-
-    Returns
-    -------
-    times : np.ndarray
-        Time grid from 0 to T (n_steps+1 points).
-    spot : np.ndarray
-        Simulated GBM path for the underlying.
-    portfolio : np.ndarray
-        Value of the replicating portfolio over time.
-    hedging_error : float
-        Final difference: portfolio_T - payoff_T.
+    Retour :
+    - times : grille de temps
+    - spot : trajectoire simulée du sous-jacent
+    - portfolio : valeur du portefeuille de réplication
+    - hedging_error : erreur finale de couverture
     """
+
     dt = T / n_steps
     sqrt_dt = math.sqrt(dt)
 
-    # --- 1) Simulate GBM path for S_t ---
+    # ------------------------------------------------------------
+    # 1) Simulation d'une trajectoire du sous-jacent
+    # ------------------------------------------------------------
     times = np.linspace(0.0, T, n_steps + 1)
+
     spot = np.empty(n_steps + 1, dtype=float)
     spot[0] = S0
 
@@ -86,67 +66,82 @@ def simulate_delta_hedge_path(
             (r - 0.5 * sigma * sigma) * dt + sigma * sqrt_dt * z
         )
 
-    # --- 2) Delta-hedging strategy ---
+    # ------------------------------------------------------------
+    # 2) Mise en place du portefeuille de couverture
+    # ------------------------------------------------------------
     portfolio = np.empty(n_steps + 1, dtype=float)
 
-    # Initial option price and delta at t = 0
+    # Prix initial du call
     V0 = bs_call_price(S0, K, r, sigma, T)
+
+    # Delta initial
     delta0 = bs_call_delta(S0, K, r, sigma, T)
 
-    # We hold delta0 shares and finance the rest by borrowing/lending at rate r
+    # On détient delta0 actions
     shares = delta0
-    cash = V0 - shares * S0  # can be negative (borrowing)
+
+    # Le reste est en cash
+    cash = V0 - shares * S0
+
+    # Valeur initiale du portefeuille = prix du call
     portfolio[0] = V0
 
-    # Rebalance at each step
+    # ------------------------------------------------------------
+    # 3) Rééquilibrage dynamique
+    # ------------------------------------------------------------
     for i in range(1, n_steps + 1):
         t_i = times[i]
         S_i = spot[i]
 
-        # Cash grows at risk-free rate between rebalancings
+        # Le cash grossit au taux sans risque
         cash *= math.exp(r * dt)
 
-        # Value of portfolio *just before* rebalancing
+        # Valeur du portefeuille juste avant rééquilibrage
         portfolio[i] = shares * S_i + cash
 
-        # If not at maturity, update delta and rebalance
+        # Tant qu'on n'est pas à maturité, on met à jour le delta
         if i < n_steps:
-            tau = T - t_i  # time to maturity
+            tau = T - t_i
             new_delta = bs_call_delta(S_i, K, r, sigma, tau)
 
-            # Buy/sell underlying to move from old delta to new delta
+            # Variation du nombre d'actions
             d_shares = new_delta - shares
-            cash -= d_shares * S_i  # funding the trade from the cash account
+
+            # Achat/vente financé par le cash
+            cash -= d_shares * S_i
+
+            # Nouveau nombre d'actions
             shares = new_delta
 
-    # --- 3) Payoff at maturity and hedging error ---
+    # ------------------------------------------------------------
+    # 4) Erreur finale de couverture
+    # ------------------------------------------------------------
     payoff_T = max(spot[-1] - K, 0.0)
     portfolio_T = portfolio[-1]
+
     hedging_error = portfolio_T - payoff_T
 
     return times, spot, portfolio, hedging_error
 
 
-# ----------------------------------------------------------------------
-# Monte Carlo loop on many paths
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
+# 2) Répéter sur beaucoup de trajectoires
+# ------------------------------------------------------------
 def simulate_hedging_errors_mc(
     S0: float = 100.0,
     K: float = 100.0,
     r: float = 0.02,
     sigma: float = 0.2,
     T: float = 1.0,
-    n_steps: int = 52,   # weekly rebalancing on 1 year
+    n_steps: int = 52,
     n_paths: int = 10_000,
     seed: int = 42,
 ) -> np.ndarray:
     """
-    Run a Monte Carlo on hedging error for a delta-hedged call.
+    Lance une simulation Monte Carlo des erreurs de couverture.
 
-    Returns
-    -------
-    errors : np.ndarray
-        Vector of size n_paths with portfolio_T - payoff_T for each path.
+    Retour :
+    - errors : vecteur des erreurs finales sur tous les chemins
     """
     rng = np.random.default_rng(seed)
     errors = np.empty(n_paths, dtype=float)
@@ -166,19 +161,20 @@ def simulate_hedging_errors_mc(
     return errors
 
 
-# ----------------------------------------------------------------------
-# Demo when run as a script
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------
+# 3) Démo complète
+# ------------------------------------------------------------
 def main():
-    # Parameters for the study
+    # Paramètres
     S0 = 100.0
     K = 100.0
     r = 0.02
     sigma = 0.2
     T = 1.0
-    n_steps = 52       # weekly
-    n_paths = 10_000   # Monte Carlo size
+    n_steps = 52
+    n_paths = 10_000
 
+    # Simulation des erreurs
     errors = simulate_hedging_errors_mc(
         S0=S0,
         K=K,
@@ -190,7 +186,7 @@ def main():
         seed=123,
     )
 
-    # Basic stats
+    # Statistiques simples
     mean_err = float(errors.mean())
     std_err = float(errors.std(ddof=1))
     q05, q50, q95 = np.quantile(errors, [0.05, 0.5, 0.95])
@@ -202,13 +198,13 @@ def main():
     print(f"Std of error    : {std_err:.6f}")
     print(f"5% / 50% / 95%  : {q05:.6f}  {q50:.6f}  {q95:.6f}")
 
-    # Histogram of hedging PnL
+    # Histogramme des erreurs
     plt.figure(figsize=(8, 5))
     plt.hist(errors, bins=50, density=True, alpha=0.7)
-    plt.axvline(0.0, color="black", lw=1.2, ls="--", label="Perfect hedge (0)")
-    plt.title("Distribution of delta-hedging error (portfolio_T - payoff_T)")
-    plt.xlabel("Hedging error")
-    plt.ylabel("Density")
+    plt.axvline(0.0, color="black", lw=1.2, ls="--", label="Couverture parfaite")
+    plt.title("Distribution de l'erreur de delta-hedging")
+    plt.xlabel("Erreur de couverture")
+    plt.ylabel("Densité")
     plt.grid(alpha=0.3)
     plt.legend()
     plt.tight_layout()
