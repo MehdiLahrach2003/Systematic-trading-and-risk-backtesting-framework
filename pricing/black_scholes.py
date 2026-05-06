@@ -1,14 +1,20 @@
 # pricing/black_scholes.py
-"""
-Black–Scholes pricing for European calls and puts, plus basic Greeks.
-
-These functions are imported by other modules (delta hedging, smile, etc.).
-The plotting demo only runs when this file is executed as a script.
-"""
+# ------------------------------------------------------------
+# Ce fichier implémente le modèle de Black-Scholes
+# pour pricer des options européennes.
+#
+# Il calcule :
+# - le prix d'un call
+# - le prix d'un put
+# - quelques Greeks de base :
+#   delta, gamma, vega, theta
+#
+# Ce fichier est fondamental car beaucoup d'autres modules
+# vont s'appuyer dessus (vol implicite, delta hedging, etc.).
+# ------------------------------------------------------------
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Tuple
 
 import numpy as np
@@ -17,10 +23,8 @@ from scipy.stats import norm
 
 
 # ---------------------------------------------------------------------
-# Core helpers
+# 1) Quantités intermédiaires d1 et d2
 # ---------------------------------------------------------------------
-
-
 def _d1_d2(
     S: float | np.ndarray,
     K: float | np.ndarray,
@@ -29,26 +33,21 @@ def _d1_d2(
     T: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Compute the standard Black–Scholes d1 and d2 terms.
+    Calcule les quantités d1 et d2 du modèle de Black-Scholes.
 
-    Parameters
+    Paramètres
     ----------
-    S : float or np.ndarray
-        Spot price of the underlying.
-    K : float or np.ndarray
-        Strike price.
-    r : float
-        Risk-free rate (continuously compounded).
-    sigma : float
-        Volatility (annualised).
-    T : float
-        Time to maturity in years.
+    S : prix spot du sous-jacent
+    K : strike
+    r : taux sans risque
+    sigma : volatilité annualisée
+    T : maturité (en années)
 
-    Returns
-    -------
-    d1, d2 : np.ndarray
-        The usual Black–Scholes d1 and d2 terms.
+    Retour
+    ------
+    d1, d2
     """
+
     if sigma <= 0.0 or T <= 0.0:
         raise ValueError("sigma and T must be strictly positive.")
 
@@ -59,16 +58,16 @@ def _d1_d2(
         raise ValueError("S and K must be strictly positive.")
 
     sqrtT = np.sqrt(T)
+
     d1 = (np.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT)
     d2 = d1 - sigma * sqrtT
+
     return d1, d2
 
 
 # ---------------------------------------------------------------------
-# Prices
+# 2) Prix du call
 # ---------------------------------------------------------------------
-
-
 def bs_call_price(
     S: float | np.ndarray,
     K: float | np.ndarray,
@@ -77,22 +76,27 @@ def bs_call_price(
     T: float,
 ) -> np.ndarray:
     """
-    Black–Scholes price for a European call.
-
-    Works with scalars or NumPy arrays.
+    Prix Black-Scholes d'un call européen.
     """
+
+    # Cas limite : volatilité nulle ou maturité nulle
+    # On retombe sur la valeur intrinsèque
     if sigma <= 0.0 or T <= 0.0:
-        # Immediate expiry or zero vol → intrinsic value
         S_arr = np.asarray(S, dtype=float)
         K_arr = np.asarray(K, dtype=float)
         return np.maximum(S_arr - K_arr, 0.0)
 
     d1, d2 = _d1_d2(S, K, r, sigma, T)
+
     S = np.asarray(S, dtype=float)
     K = np.asarray(K, dtype=float)
+
     return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
 
 
+# ---------------------------------------------------------------------
+# 3) Prix du put
+# ---------------------------------------------------------------------
 def bs_put_price(
     S: float | np.ndarray,
     K: float | np.ndarray,
@@ -101,26 +105,25 @@ def bs_put_price(
     T: float,
 ) -> np.ndarray:
     """
-    Black–Scholes price for a European put.
-
-    Works with scalars or NumPy arrays.
+    Prix Black-Scholes d'un put européen.
     """
+
     if sigma <= 0.0 or T <= 0.0:
         S_arr = np.asarray(S, dtype=float)
         K_arr = np.asarray(K, dtype=float)
         return np.maximum(K_arr - S_arr, 0.0)
 
     d1, d2 = _d1_d2(S, K, r, sigma, T)
+
     S = np.asarray(S, dtype=float)
     K = np.asarray(K, dtype=float)
+
     return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
 
 # ---------------------------------------------------------------------
-# Greeks (for the call; gamma/vega are same for the put)
+# 4) Greeks
 # ---------------------------------------------------------------------
-
-
 def bs_call_delta(
     S: float | np.ndarray,
     K: float | np.ndarray,
@@ -129,7 +132,10 @@ def bs_call_delta(
     T: float,
 ) -> np.ndarray:
     """
-    Delta of a European call option.
+    Delta d'un call européen.
+
+    Le delta mesure la sensibilité du prix de l'option
+    au prix du sous-jacent.
     """
     d1, _ = _d1_d2(S, K, r, sigma, T)
     return norm.cdf(d1)
@@ -143,7 +149,9 @@ def bs_call_gamma(
     T: float,
 ) -> np.ndarray:
     """
-    Gamma of a European call (and put).
+    Gamma d'un call (et aussi d'un put).
+
+    Le gamma mesure la sensibilité du delta.
     """
     d1, _ = _d1_d2(S, K, r, sigma, T)
     S = np.asarray(S, dtype=float)
@@ -159,15 +167,20 @@ def bs_call_vega(
     as_bp: bool = False,
 ) -> np.ndarray:
     """
-    Vega of a European call (and put).
+    Vega d'un call (et aussi d'un put).
 
-    If as_bp is True, returns sensitivity per 1bp of vol (i.e. divided by 10,000).
+    Le vega mesure la sensibilité du prix
+    à la volatilité.
     """
     d1, _ = _d1_d2(S, K, r, sigma, T)
     S = np.asarray(S, dtype=float)
+
     vega = S * norm.pdf(d1) * np.sqrt(T)
+
+    # Option : vega par basis point de volatilité
     if as_bp:
         vega = vega / 10_000.0
+
     return vega
 
 
@@ -179,27 +192,29 @@ def bs_call_theta(
     T: float,
 ) -> np.ndarray:
     """
-    Theta of a European call (per year unit of T).
+    Theta d'un call européen.
 
-    If you want "per day" theta, divide the result by 252.
+    Le theta mesure la sensibilité au temps.
+    Ici il est exprimé par année.
     """
     d1, d2 = _d1_d2(S, K, r, sigma, T)
+
     S = np.asarray(S, dtype=float)
     K = np.asarray(K, dtype=float)
 
     term1 = -S * norm.pdf(d1) * sigma / (2.0 * np.sqrt(T))
     term2 = -r * K * np.exp(-r * T) * norm.cdf(d2)
+
     return term1 + term2
 
 
 # ---------------------------------------------------------------------
-# Demo plot when running this file as a script
+# 5) Démo graphique
 # ---------------------------------------------------------------------
-
-
 def main() -> None:
     """
-    Simple visual sanity check: call/put prices vs underlying.
+    Petite démo visuelle :
+    on trace le prix du call et du put en fonction du spot.
     """
     K = 100.0
     r = 0.02
@@ -207,6 +222,7 @@ def main() -> None:
     T = 1.0
 
     S_grid = np.linspace(50, 150, 200)
+
     calls = bs_call_price(S_grid, K, r, sigma, T)
     puts = bs_put_price(S_grid, K, r, sigma, T)
 
@@ -214,9 +230,10 @@ def main() -> None:
     plt.plot(S_grid, calls, label="Call price")
     plt.plot(S_grid, puts, label="Put price")
     plt.axvline(K, color="grey", ls="--", lw=1, label="Strike K")
-    plt.title("Black–Scholes call/put prices vs underlying")
+
+    plt.title("Black-Scholes : prix du call et du put")
     plt.xlabel("Spot S")
-    plt.ylabel("Option price")
+    plt.ylabel("Prix de l'option")
     plt.grid(alpha=0.3)
     plt.legend()
     plt.tight_layout()
